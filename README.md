@@ -135,4 +135,4 @@ code-level detail.
 
 ## License
 
-MIT
+Apache 2.0
