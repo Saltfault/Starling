@@ -1,0 +1,21 @@
+name: Mirror from Forgejo
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout GitHub repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch from Forgejo and push
+        run: |
+          git remote add forgejo https://forgejo.hearthhome.lol/Saltfault/Starling.git || true
+          git fetch forgejo main
+          git push origin forgejo/main:main
