@@ -32,18 +32,21 @@ travel peer-to-peer over QUIC — relays can't read your messages.
 ## Clients
 
 Starling is designed to have multiple clients sharing the same protocol.
-Currently available:
 
-### Starling TUI
-The terminal client. Text chat, voice calls, and video calls — all from
-your terminal.
+| Client | Repo | Status |
+|--------|------|--------|
+| **Starling TUI** | [Starling-TUI](https://forgejo.hearthhome.lol/Saltfault/Starling-TUI) | ✅ Text, voice, video |
+| **Starling Desktop** | [Starling-Desktop](https://forgejo.hearthhome.lol/Saltfault/Starling-Desktop) | 📋 Planned |
+| **Starling Android** | [Starling-Android](https://forgejo.hearthhome.lol/Saltfault/Starling-Android) | 📋 Planned |
+| **Starling Web** | [Starling-Web](https://forgejo.hearthhome.lol/Saltfault/Starling-Web) | 📋 Planned |
 
-- **Repo:** [forgejo.hearthhome.lol/Saltfault/Starling-TUI](https://forgejo.hearthhome.lol/Saltfault/Starling-TUI)
-- **Mirror:** [github.com/Saltfault/Starling-TUI](https://github.com/Saltfault/Starling-TUI)
-- **Install:** `cargo install --git https://forgejo.hearthhome.lol/Saltfault/Starling-TUI.git`
+### Starling Server
 
-### More clients coming
-A GUI client, a mobile client, and a web client are on the roadmap.
+The shared protocol library used by all clients.
+
+- **Repo:** [Starling-Server](https://forgejo.hearthhome.lol/Saltfault/Starling-Server)
+- Contains the network layer, crypto, voice/video pipelines, and protocol
+  handlers — everything that talks to the murmuration, without any UI code.
 
 ---
 
@@ -128,8 +131,13 @@ code-level detail.
 | Repo | Description |
 |------|-------------|
 | [Starling](https://forgejo.hearthhome.lol/Saltfault/Starling) | Primary project — docs, protocol spec, roadmap |
+| [Starling-Server](https://forgejo.hearthhome.lol/Saltfault/Starling-Server) | Shared protocol library (network, crypto, voice/video) |
 | [Starling-TUI](https://forgejo.hearthhome.lol/Saltfault/Starling-TUI) | Terminal client |
-| [Starling-TUI (GitHub mirror)](https://github.com/Saltfault/Starling-TUI) | GitHub mirror of the TUI client |
+| [Starling-Desktop](https://forgejo.hearthhome.lol/Saltfault/Starling-Desktop) | Native GUI client |
+| [Starling-Android](https://forgejo.hearthhome.lol/Saltfault/Starling-Android) | Android client |
+| [Starling-Web](https://forgejo.hearthhome.lol/Saltfault/Starling-Web) | Web client |
+
+GitHub mirrors are available under [github.com/Saltfault](https://github.com/Saltfault).
 
 ---
 
