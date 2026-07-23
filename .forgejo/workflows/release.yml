@@ -129,11 +129,11 @@ jobs:
           fi
           TAG="v${{ needs.detect.outputs.version }}"
           mkdir -p artifacts
-          for i in 1 2 3 4 5; do
+          for i in $(seq 1 30); do
             assets=$(curl -s "https://api.github.com/repos/Saltfault/Starling/releases/tags/$TAG" \
               -H "Authorization: Bearer $GH_TOKEN" | jq -r '.assets[]?.browser_download_url // empty')
             if [ -n "$assets" ]; then break; fi
-            echo "GitHub release not ready yet, retry $i/5..."
+            echo "GitHub release not ready yet, retry $i/30..."
             sleep 30
           done
           if [ -z "$assets" ]; then
@@ -197,11 +197,11 @@ jobs:
             exit 0
           fi
           TAG="v${{ needs.detect.outputs.version }}"
-          for i in 1 2 3 4 5; do
+          for i in $(seq 1 30); do
             release_id=$(curl -s "https://api.github.com/repos/Saltfault/Starling/releases/tags/$TAG" \
               -H "Authorization: Bearer $GH_TOKEN" | jq -r '.id // empty')
             if [ -n "$release_id" ]; then break; fi
-            echo "GitHub release not ready, retry $i/5..."
+            echo "GitHub release not ready, retry $i/30..."
             sleep 30
           done
           if [ -z "$release_id" ]; then
