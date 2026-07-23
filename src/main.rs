@@ -12,7 +12,20 @@ fn main() -> anyhow::Result<()> {
                 std::process::exit(1);
             }
         },
-        Some("update") => update_self(),
+        Some("update") => match args.get(2).map(String::as_str) {
+            Some("tui") => update_tui(),
+            Some("server") => update_server(),
+            None => {
+                update_self()?;
+                update_tui()?;
+                update_server()
+            }
+            Some(other) => {
+                eprintln!("Unknown update target: {other}");
+                eprintln!("Usage: starling update [tui|server]");
+                std::process::exit(1);
+            }
+        },
 
         // ── System dependencies ──────────────────────────────────────
         Some("setup") => match args.get(2).map(String::as_str) {
@@ -107,20 +120,7 @@ fn main() -> anyhow::Result<()> {
         }
         Some("tui") => match args.get(2).map(String::as_str) {
             Some("version") => exec("starling-tui", &["--version"]),
-            Some("update") => {
-                println!("Updating Starling TUI...");
-                let status = std::process::Command::new("cargo")
-                    .args(["install", "starling-tui", "--git",
-                        "https://forgejo.hearthhome.lol/Saltfault/Starling-TUI.git"])
-                    .status()
-                    .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
-                if status.success() {
-                    println!("✓ Starling TUI updated to the latest version");
-                } else {
-                    anyhow::bail!("update failed (exit code: {:?})", status.code());
-                }
-                Ok(())
-            }
+            Some("update") => update_tui(),
             Some("uninstall") => {
                 println!("Uninstalling Starling TUI...");
                 let status = std::process::Command::new("cargo")
@@ -168,20 +168,7 @@ fn main() -> anyhow::Result<()> {
         }
         Some("server") => match args.get(2).map(String::as_str) {
             Some("version") => exec("starling-server", &["--version"]),
-            Some("update") => {
-                println!("Updating Starling Server...");
-                let status = std::process::Command::new("cargo")
-                    .args(["install", "starling-server", "--git",
-                        "https://forgejo.hearthhome.lol/Saltfault/Starling-Server.git"])
-                    .status()
-                    .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
-                if status.success() {
-                    println!("✓ Starling Server updated to the latest version");
-                } else {
-                    anyhow::bail!("update failed (exit code: {:?})", status.code());
-                }
-                Ok(())
-            }
+            Some("update") => update_server(),
             Some("uninstall") => {
                 println!("Uninstalling Starling Server...");
                 let status = std::process::Command::new("cargo")
@@ -361,6 +348,36 @@ fn update_self() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn update_tui() -> anyhow::Result<()> {
+    println!("Updating Starling TUI...");
+    let status = std::process::Command::new("cargo")
+        .args(["install", "starling-tui", "--git",
+            "https://forgejo.hearthhome.lol/Saltfault/Starling-TUI.git"])
+        .status()
+        .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
+    if status.success() {
+        println!("✓ Starling TUI updated to the latest version");
+    } else {
+        anyhow::bail!("update failed (exit code: {:?})", status.code());
+    }
+    Ok(())
+}
+
+fn update_server() -> anyhow::Result<()> {
+    println!("Updating Starling Server...");
+    let status = std::process::Command::new("cargo")
+        .args(["install", "starling-server", "--git",
+            "https://forgejo.hearthhome.lol/Saltfault/Starling-Server.git"])
+        .status()
+        .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
+    if status.success() {
+        println!("✓ Starling Server updated to the latest version");
+    } else {
+        anyhow::bail!("update failed (exit code: {:?})", status.code());
+    }
+    Ok(())
+}
+
 fn install_server() -> anyhow::Result<()> {
     println!("Installing Starling Server...");
     let status = std::process::Command::new("cargo")
@@ -411,6 +428,8 @@ fn print_help() {
     println!("  starling server update         update the Server");
     println!("  starling server uninstall      uninstall the Server");
     println!();
-    println!("  starling update                update Starling to the latest version");
+    println!("  starling update                update Starling, TUI, and Server");
+    println!("  starling update tui            update only the TUI");
+    println!("  starling update server         update only the Server");
     println!("  starling help                  print this help");
 }
