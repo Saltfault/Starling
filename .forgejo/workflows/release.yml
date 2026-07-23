@@ -97,11 +97,14 @@ jobs:
           path: artifacts
 
       - name: Download macOS binaries from GitHub Release
-        if: secrets.ACTION_TOKEN_GITHUB != ''
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.ACTION_TOKEN_GITHUB }}
         run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "ACTION_TOKEN_GITHUB not set, skipping macOS download"
+            exit 0
+          fi
           TAG="v${{ needs.detect.outputs.version }}"
           mkdir -p artifacts
           gh release download "$TAG" --repo "Saltfault/Starling" --dir artifacts --skip-existing 2>&1 || echo "macOS binaries not yet available"
@@ -146,11 +149,14 @@ jobs:
           echo "Forgejo release $TAG populated with $(find artifacts -type f | wc -l) assets"
 
       - name: Upload Linux + Windows binaries to GitHub Release
-        if: secrets.ACTION_TOKEN_GITHUB != ''
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.ACTION_TOKEN_GITHUB }}
         run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "ACTION_TOKEN_GITHUB not set, skipping GitHub upload"
+            exit 0
+          fi
           TAG="v${{ needs.detect.outputs.version }}"
           for f in artifacts/*; do
             [ ! -f "$f" ] && continue

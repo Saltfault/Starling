@@ -54,7 +54,7 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Rust target
         run: rustup target add ${{ matrix.target }}
       - name: Build release
@@ -85,11 +85,14 @@ jobs:
           generate_release_notes: true
 
       - name: Upload macOS binaries to Forgejo Release
-        if: secrets.ACTION_TOKEN_FORGEJO != ''
         shell: bash
         env:
           FORGEJO_TOKEN: ${{ secrets.ACTION_TOKEN_FORGEJO }}
         run: |
+          if [ -z "$FORGEJO_TOKEN" ]; then
+            echo "ACTION_TOKEN_FORGEJO not set, skipping Forgejo upload"
+            exit 0
+          fi
           TAG="v${{ needs.detect.outputs.version }}"
           API="https://forgejo.hearthhome.lol/api/v1"
           OWNER="Saltfault"
