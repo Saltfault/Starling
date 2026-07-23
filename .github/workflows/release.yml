@@ -108,12 +108,12 @@ jobs:
           REPO="Starling"
 
           # find existing release
-          release_id=$(curl -sf "$API/repos/$OWNER/$REPO/releases/tags/$TAG" \
+          release_id=$(curl -s "$API/repos/$OWNER/$REPO/releases/tags/$TAG" \
             -H "Authorization: Bearer $FORGEJO_TOKEN" | jq -r '.id // empty')
 
           # create if missing
           if [ -z "$release_id" ]; then
-            release_id=$(curl -sf -X POST "$API/repos/$OWNER/$REPO/releases" \
+            release_id=$(curl -s -X POST "$API/repos/$OWNER/$REPO/releases" \
               -H "Authorization: Bearer $FORGEJO_TOKEN" \
               -H "Content-Type: application/json" \
               -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"draft\":false,\"prerelease\":false}" | jq -r '.id // empty')
@@ -129,7 +129,7 @@ jobs:
             [ ! -f "$f" ] && continue
             filename=$(basename "$f")
             echo "Uploading $filename to Forgejo release $release_id"
-            curl -sf -X POST "$API/repos/$OWNER/$REPO/releases/$release_id/assets" \
+            curl -s -X POST "$API/repos/$OWNER/$REPO/releases/$release_id/assets" \
               -H "Authorization: Bearer $FORGEJO_TOKEN" \
               -F "attachment=@$f" > /dev/null 2>&1 || echo "Upload skipped (may already exist): $filename"
           done

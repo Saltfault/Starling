@@ -129,7 +129,7 @@ jobs:
           fi
           TAG="v${{ needs.detect.outputs.version }}"
           mkdir -p artifacts
-          assets=$(curl -sf "https://api.github.com/repos/Saltfault/Starling/releases/tags/$TAG" \
+          assets=$(curl -s "https://api.github.com/repos/Saltfault/Starling/releases/tags/$TAG" \
             -H "Authorization: Bearer $GH_TOKEN" | jq -r '.assets[]?.browser_download_url // empty')
           if [ -z "$assets" ]; then
             echo "macOS binaries not yet available on GitHub"
@@ -149,11 +149,11 @@ jobs:
           REPO="${GITHUB_REPOSITORY#*/}"
           API="https://${GITHUB_SERVER_URL#https://}/api/v1"
 
-          release_id=$(curl -sf "$API/repos/$OWNER/$REPO/releases/tags/$TAG" \
+          release_id=$(curl -s "$API/repos/$OWNER/$REPO/releases/tags/$TAG" \
             -H "Authorization: Bearer $FORGEJO_TOKEN" | jq -r '.id // empty')
 
           if [ -z "$release_id" ]; then
-            release_id=$(curl -sf -X POST "$API/repos/$OWNER/$REPO/releases" \
+            release_id=$(curl -s -X POST "$API/repos/$OWNER/$REPO/releases" \
               -H "Authorization: Bearer $FORGEJO_TOKEN" \
               -H "Content-Type: application/json" \
               -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"draft\":false,\"prerelease\":false}" | jq -r '.id // empty')
@@ -185,7 +185,7 @@ jobs:
             exit 0
           fi
           TAG="v${{ needs.detect.outputs.version }}"
-          release_id=$(curl -sf "https://api.github.com/repos/Saltfault/Starling/releases/tags/$TAG" \
+          release_id=$(curl -s "https://api.github.com/repos/Saltfault/Starling/releases/tags/$TAG" \
             -H "Authorization: Bearer $GH_TOKEN" | jq -r '.id // empty')
           if [ -z "$release_id" ]; then
             echo "GitHub release $TAG does not exist yet, skipping"
