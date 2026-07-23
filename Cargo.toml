@@ -1,0 +1,13 @@
+[package]
+name = "starling"
+version = "0.1.0"
+edition = "2026"
+license = "Apache-2.0"
+description = "Starling — federated p2p communications platform installer and launcher"
+
+[[bin]]
+name = "starling"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
