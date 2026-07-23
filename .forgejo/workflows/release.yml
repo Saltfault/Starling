@@ -17,7 +17,7 @@ jobs:
       version: ${{ steps.version.outputs.value }}
       skip: ${{ steps.check.outputs.skip }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Extract version
@@ -64,7 +64,7 @@ jobs:
           - target: aarch64-pc-windows-msvc
             os: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Rust target
         run: rustup target add ${{ matrix.target }}
       - name: Setup cross-compilation toolchain
@@ -81,7 +81,7 @@ jobs:
           [[ "${{ matrix.target }}" == *-windows-* ]] && ext=".exe"
           cp "target/${{ matrix.target }}/release/starling${ext}" "starling-${{ matrix.target }}${ext}"
       - name: Upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: starling-${{ matrix.target }}
           path: starling-${{ matrix.target }}*
@@ -91,7 +91,7 @@ jobs:
     if: needs.detect.outputs.skip == 'false'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           path: artifacts
 
