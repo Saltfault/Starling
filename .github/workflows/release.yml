@@ -82,4 +82,15 @@ jobs:
         with:
           tag_name: v${{ needs.detect.outputs.version }}
           files: artifacts/**/*
-          generate_release_notes: true
+          body: |
+            ## Which download?
+
+            - Windows (most PCs) ........... `x86_64-pc-windows-gnu.exe`
+            - Windows (older PCs) ......... `i686-pc-windows-gnu.exe`
+            - macOS (M1–M4) ............... `aarch64-apple-darwin`
+            - macOS (Intel) ............... `x86_64-apple-darwin`
+            - Linux (most) ............... `x86_64-unknown-linux-gnu`
+            - Linux (portable/Alpine) .... `x86_64-unknown-linux-musl`
+            - Linux (ARM64 / Pi 4+) ...... `aarch64-unknown-linux-gnu`
+            - Linux (ARMv7 / Pi 2–3) ..... `armv7-unknown-linux-gnueabihf`
+            - Linux (32-bit) ............. `i686-unknown-linux-gnu`
