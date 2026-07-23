@@ -27,16 +27,6 @@ fn main() -> anyhow::Result<()> {
             }
         },
 
-        // ── System dependencies ──────────────────────────────────────
-        Some("setup") => match args.get(2).map(String::as_str) {
-            Some("tui") => install_deps_tui(),
-            Some("server") => install_deps_server(),
-            _ => {
-                eprintln!("Usage: starling setup <tui|server>");
-                std::process::exit(1);
-            }
-        },
-
         // ── TUI commands (handled directly) ──────────────────────────
         Some("leave") => {
             let _code = args.get(2).cloned().unwrap_or_default();
@@ -225,9 +215,11 @@ fn config_dir() -> std::path::PathBuf {
 }
 
 fn install_tui() -> anyhow::Result<()> {
+    install_deps_tui()?;
     println!("Installing Starling TUI...");
     let status = std::process::Command::new("cargo")
-        .args(["install", "--git", "https://forgejo.hearthhome.lol/Saltfault/Starling-TUI.git"])
+        .args(["install", "--jobs", "2", "--git",
+            "https://forgejo.hearthhome.lol/Saltfault/Starling-TUI.git"])
         .status()
         .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
     if status.success() {
@@ -337,7 +329,8 @@ fn install_deps_server() -> anyhow::Result<()> {
 fn update_self() -> anyhow::Result<()> {
     println!("Updating Starling...");
     let status = std::process::Command::new("cargo")
-        .args(["install", "--git", "https://forgejo.hearthhome.lol/Saltfault/Starling.git"])
+        .args(["install", "--jobs", "2", "--git",
+            "https://forgejo.hearthhome.lol/Saltfault/Starling.git"])
         .status()
         .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
     if status.success() {
@@ -349,9 +342,10 @@ fn update_self() -> anyhow::Result<()> {
 }
 
 fn update_tui() -> anyhow::Result<()> {
+    install_deps_tui()?;
     println!("Updating Starling TUI...");
     let status = std::process::Command::new("cargo")
-        .args(["install", "starling-tui", "--git",
+        .args(["install", "--jobs", "2", "starling-tui", "--git",
             "https://forgejo.hearthhome.lol/Saltfault/Starling-TUI.git"])
         .status()
         .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
@@ -364,9 +358,10 @@ fn update_tui() -> anyhow::Result<()> {
 }
 
 fn update_server() -> anyhow::Result<()> {
+    install_deps_server()?;
     println!("Updating Starling Server...");
     let status = std::process::Command::new("cargo")
-        .args(["install", "starling-server", "--git",
+        .args(["install", "--jobs", "2", "starling-server", "--git",
             "https://forgejo.hearthhome.lol/Saltfault/Starling-Server.git"])
         .status()
         .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
@@ -379,9 +374,11 @@ fn update_server() -> anyhow::Result<()> {
 }
 
 fn install_server() -> anyhow::Result<()> {
+    install_deps_server()?;
     println!("Installing Starling Server...");
     let status = std::process::Command::new("cargo")
-        .args(["install", "--git", "https://forgejo.hearthhome.lol/Saltfault/Starling-Server.git"])
+        .args(["install", "--jobs", "2", "--git",
+            "https://forgejo.hearthhome.lol/Saltfault/Starling-Server.git"])
         .status()
         .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
     if status.success() {
@@ -398,8 +395,6 @@ fn print_help() {
     println!("Usage:");
     println!("  starling install tui            install the TUI client");
     println!("  starling install server         install the headless roost server");
-    println!("  starling setup tui              install TUI system dependencies");
-    println!("  starling setup server           install Server system dependencies");
     println!();
     println!("  starling profile                configure your profile (name, audio, identity)");
     println!("  starling join <code>            join a flock or roost");
