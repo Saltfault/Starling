@@ -1,0 +1,109 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  detect:
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Extract version
+        id: version
+        run: echo "value=$(grep '^version' Cargo.toml | sed 's/.*"\(.*\)"/\1/')" >> "$GITHUB_OUTPUT"
+      - name: Check version increased
+        run: |
+          latest_tag=$(git tag --list 'v*' --sort=-v:refname | head -1)
+          current="v${{ steps.version.outputs.value }}"
+          if [ -z "$latest_tag" ]; then
+            echo "No previous tags — proceeding"
+            exit 0
+          fi
+          if [ "$current" = "$latest_tag" ]; then
+            echo "Version unchanged ($current) — skipping release"
+            exit 78
+          fi
+          echo "Version changed: $latest_tag -> $current"
+      - name: Run tests
+        run: cargo test --all-features
+      - name: Tag and push
+        run: |
+          git config user.name "starling-ci"
+          git config user.email "ci@starling"
+          git tag "v${{ steps.version.outputs.value }}"
+          git push "https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ github.repository }}.git" "v${{ steps.version.outputs.value }}"
+
+  build:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: i686-unknown-linux-gnu
+            os: ubuntu-latest
+            cross: true
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            cross: true
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+          - target: i686-pc-windows-msvc
+            os: windows-latest
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+          - target: x86_64-apple-darwin
+            os: macos-13
+          - target: aarch64-apple-darwin
+            os: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+      - name: Setup cross-compilation toolchain
+        if: matrix.cross
+        uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: ${{ matrix.target }}
+      - name: Build release
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Prepare binary
+        shell: bash
+        run: |
+          ext=""
+          [[ "${{ matrix.target }}" == *-windows-* ]] && ext=".exe"
+          cp "target/${{ matrix.target }}/release/starling${ext}" "starling-${{ matrix.target }}${ext}"
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: starling-${{ matrix.target }}
+          path: starling-${{ matrix.target }}*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
