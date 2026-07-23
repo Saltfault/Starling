@@ -103,7 +103,7 @@
 <body>
 
 <header class="hero">
-  <div class="eyebrow">The Build Guide · v0.3.15 and beyond</div>
+  <div class="eyebrow">The Build Guide · Starling-TUI v0.4.3 and beyond</div>
   <h1>Star<em>ling</em></h1>
   <p class="tagline">From a blinking cursor to a murmuration — what's built, how it works, and what comes next.</p>
   <p class="note">Rust 2024 · ratatui 0.30 · iroh 1.0 · iroh-gossip 0.101 · tokio</p>
@@ -120,9 +120,9 @@
     <li><a href="#p2">Phase 2 — Voice</a> <span class="done-tag">SHIPPED</span></li>
     <li><a href="#p3">Phase 3 — E2E encryption &amp; profiles</a> <span class="done-tag">SHIPPED</span></li>
     <li><a href="#p4">Phase 4 — Video in the terminal</a> <span class="done-tag">SHIPPED</span></li>
-    <li><a href="#p5">Phase 5 — Presence &amp; history</a></li>
-    <li><a href="#p6">Phase 6 — Many flocks at once</a></li>
-    <li><a href="#p7">Phase 7 — Roosts: servers &amp; channels</a></li>
+    <li><a href="#p5">Phase 5 — Presence &amp; history</a> <span class="done-tag">SHIPPED</span></li>
+    <li><a href="#p6">Phase 6 — Many flocks at once</a> <span class="done-tag">SHIPPED</span></li>
+    <li><a href="#p7">Phase 7 — Roosts: servers &amp; channels</a> <span class="done-tag">IN PROGRESS</span></li>
     <li><a href="#p8">Phase 8 — Roles &amp; permissions</a></li>
     <li><a href="#p9">Phase 9 — Real cryptographic identity</a></li>
     <li><a href="#p10">Phase 10 — Own the murmuration</a></li>
@@ -130,9 +130,10 @@
 </nav>
 
 <section>
-  <p class="lead">Starling is real now. Two birds anywhere on the internet can open a flock, chat over encrypted gossip, and talk over Opus voice — from a terminal, with no company in the middle. This guide walks through the code that exists (Phases 0–3) so you understand every piece you've built, then lays out the road ahead (Phases 4–10) in the same conventions the codebase already uses.</p>
+  <p class="lead">Starling works. Two birds anywhere on the internet can hatch a flock, chat over encrypted gossip, talk over Opus voice, see each other over terminal video, and hold several flocks at once — from a terminal, with no company in the middle. This guide walks the code that exists (Phases 0–6) so you understand every piece, then lays out the road ahead (Phases 7–10) in the same conventions the codebase already uses.</p>
+  <div class="callout"><span class="lbl">The six repositories</span>Starling was one binary; it's now <strong>six repos</strong>. This guide is about <strong>Starling-TUI</strong> (v0.4.3), the working terminal client — every embedded listing is its real source. The protocol, crypto, and media pipelines also live as a shared library in <strong>Starling-Server</strong>, which doubles as the headless <em>roost</em> server (Phase 7). Three GUI clients — <strong>Desktop</strong>, <strong>Android</strong>, <strong>Web</strong> — are planned, sharing a Solid.JS + Tauri frontend over that same Rust core. Only the TUI and Server are in active development.</div>
   <div class="callout"><span class="lbl">The words we use</span>The app is <strong>Starling</strong>. The whole peer-to-peer network is <strong>the murmuration</strong>. Each node is a <strong>bird</strong>. A room of birds — one gossip topic, one shared key — is a <strong>flock</strong>, hatched by one bird and joined via its invite code. A bird that stays online to keep a community's history is a <strong>roost</strong> (Phase 7), and a private message sealed to a single bird is a <strong>chirp</strong> (Phase 9). That's the whole vocabulary — everything else keeps its ordinary networking name. The metaphor is load-bearing where it's used: a real murmuration is thousands of leaderless birds each reacting only to their neighbors, which is exactly how the gossip mesh works.</div>
-  <div class="callout"><span class="lbl">How to read this</span>Phases 0–3 are a <strong>tour of code that ships today</strong> — file by file, with the real source. Phases 4–10 are a <strong>roadmap with real code</strong> written to drop into the current module layout (<code class="inl">event.rs</code>, <code class="inl">net.rs</code>, <code class="inl">ui.rs</code>, <code class="inl">main.rs</code>, friends). Every phase ends with a checkpoint. When a phase touches an existing file, the code is labeled as an edit to that file — never a second competing version.</div>
+  <div class="callout"><span class="lbl">How to read this</span>Phases 0–6 are a <strong>tour of code that ships today</strong> in Starling-TUI — file by file, with the real source. Phases 7–10 are a <strong>roadmap with real code</strong> written to drop into the current module layout (<code class="inl">event.rs</code>, <code class="inl">net.rs</code>, <code class="inl">ui.rs</code>, <code class="inl">main.rs</code>, friends); Phase 7's roost server is partly built already in Starling-Server. Every phase ends with a checkpoint. When a phase touches an existing file, the code is labeled as an edit to that file — never a second competing version.</div>
 </section>
 
 <div class="divider">§</div>
@@ -141,14 +142,14 @@
   <span class="phase-tag shipped">Phase 0 · Shipped</span>
   <div class="kicker">Foundations</div>
   <h2>The shape of the whole thing</h2>
-  <p>Starling is one binary with three subcommands — <code class="inl">starling setup</code>, <code class="inl">starling open</code>, <code class="inl">starling join &lt;node-id&gt;</code> — built on two halves that never block each other: a <strong>UI loop</strong> (ratatui drawing the terminal) and a <strong>network task</strong> (iroh talking to the murmuration), bridged by two channels.</p>
+  <p>The Starling-TUI binary is <code class="inl">starling</code>. Bare or with <code class="inl">open</code> it launches the client; <code class="inl">join &lt;code&gt;</code> launches joined to a flock; and a handful of utility subcommands (<code class="inl">setup</code>, <code class="inl">list</code>, <code class="inl">doctor</code>, <code class="inl">logs</code>, …) run and exit — the <a href="#cli">command reference</a> lists them all. Under all of it are two halves that never block each other: a <strong>UI loop</strong> (ratatui drawing the terminal) and a <strong>network task</strong> (iroh talking to the murmuration), bridged by two channels.</p>
 <pre><code><span class="c-cm">           ┌─────────────────┐   channel    ┌──────────────────┐</span>
 <span class="c-cm">  keyboard →│   UI  (ratatui) │ ───────────► │  Network (iroh)  │→ birds</span>
 <span class="c-cm">   screen ←─│   main.rs loop  │ ◄─────────── │  net::run task   │← birds</span>
 <span class="c-cm">           └─────────────────┘   channel    └──────────────────┘</span>
 <span class="c-cm">              AppEvent enum                    Command enum</span></code></pre>
   <h3>The module map</h3>
-  <p>Every file below appears <strong>complete</strong> somewhere in Phases 0–3 — the third column says where.</p>
+  <p>Every file below appears <strong>complete</strong> somewhere in Phases 0–6 — the third column says where.</p>
   <table class="spec">
     <tr><th>File</th><th>Owns</th><th>Shown in full</th></tr>
     <tr><td><code>main.rs</code></td><td>Subcommand dispatch, terminal setup, the draw/input/drain loop, keybindings.</td><td>Phase 1</td></tr>
@@ -161,6 +162,8 @@
     <tr><td><code>playback.rs</code></td><td>Opus decode → lock-free ring buffer → speaker.</td><td>Phase 2</td></tr>
     <tr><td><code>opus_ffi.rs</code></td><td>Safe Rust wrappers over the opus C API — <code>Encoder</code>/<code>Decoder</code> with RAII drops.</td><td>Phase 2</td></tr>
     <tr><td><code>video.rs</code></td><td>Webcam capture + half-block terminal rendering.</td><td>Phase 4</td></tr>
+    <tr><td><code>sync.rs</code></td><td><code>SYNC_ALPN</code>, <code>SyncProto</code>, <code>backfill</code> — history for late joiners.</td><td>Phase 5</td></tr>
+    <tr><td><code>roost/</code></td><td>Roost protocol <em>types</em> the client reads to render the channel rail (the server itself is in Starling-Server).</td><td>Phase 7</td></tr>
     <tr><td><code>build.rs</code></td><td>Downloads a pre-built opus static library at build time. curl + tar, no CMake.</td><td>Phase 2</td></tr>
     <tr><td><code>config.rs</code></td><td><code>Profile</code>: name + audio devices, saved to disk, 32-digit portable code.</td><td>Phase 3</td></tr>
     <tr><td><code>setup.rs</code></td><td>The <code>starling setup</code> wizard TUI.</td><td>Phase 3</td></tr>
@@ -169,26 +172,36 @@
   <h3>The manifest</h3>
   <p class="filename">Cargo.toml — complete</p>
 <pre><code><span class="c-ty">[package]</span>
-name = <span class="c-str">"Starling"</span>
-version = <span class="c-str">"0.3.15"</span>
-edition = <span class="c-str">"2024"</span>
+name = <span class="c-str">"Starling-TUI"</span>
+version = <span class="c-str">"0.4.4"</span>
+edition = <span class="c-str">"2026"</span>
+
+<span class="c-ty">[[bin]]</span>
+name = <span class="c-str">"starling-tui"</span>
+path = <span class="c-str">"src/main.rs"</span>
+
+<span class="c-ty">[features]</span>
+default = []
+audio = [<span class="c-str">"dep:cpal"</span>, <span class="c-str">"dep:ringbuf"</span>]
+video = [<span class="c-str">"dep:nokhwa"</span>]
 
 <span class="c-ty">[dependencies]</span>
 anyhow = <span class="c-str">"1.0.104"</span>
 bytes = <span class="c-str">"1.12.1"</span>
 chacha20poly1305 = <span class="c-str">"0.11"</span>
 chrono = { version = <span class="c-str">"0.4.45"</span>, features = [<span class="c-str">"serde"</span>] }
-cpal = <span class="c-str">"0.18.1"</span>
+cpal = { version = <span class="c-str">"0.18.1"</span>, optional = true }
 crossterm = { version = <span class="c-str">"0.29.0"</span>, features = [<span class="c-str">"event-stream"</span>] }
 data-encoding = <span class="c-str">"2.11.0"</span>
 flate2 = <span class="c-str">"1.1"</span>
+generic-array = <span class="c-str">"0.14.9"</span>
 image = <span class="c-str">"0.25.10"</span>
 iroh = <span class="c-str">"1.0.3"</span>
 iroh-gossip = <span class="c-str">"0.101.0"</span>
 n0-future = <span class="c-str">"0.3.2"</span>
 postcard = { version = <span class="c-str">"1.1.3"</span>, features = [<span class="c-str">"use-std"</span>] }
 ratatui = <span class="c-str">"0.30.2"</span>
-ringbuf = <span class="c-str">"0.5.1"</span>
+ringbuf = { version = <span class="c-str">"0.5.1"</span>, optional = true }
 serde = { version = <span class="c-str">"1.0.229"</span>, features = [<span class="c-str">"derive"</span>] }
 sha2 = <span class="c-str">"0.11.0"</span>
 tokio = { version = <span class="c-str">"1.53.1"</span>, features = [<span class="c-str">"full"</span>] }
@@ -196,17 +209,17 @@ uuid = { version = <span class="c-str">"1.24.0"</span>, features = [<span class=
 
 <span class="c-cm"># Linux: cpal PulseAudio backend, libc, nokhwa (V4L2 — needs libclang-dev)</span>
 <span class="c-ty">[target.'cfg(target_os = <span class="c-str">"linux"</span>)'.dependencies]</span>
-cpal = { version = <span class="c-str">"0.18.1"</span>, features = [<span class="c-str">"pulseaudio"</span>] }
+cpal = { version = <span class="c-str">"0.18.1"</span>, features = [<span class="c-str">"pulseaudio"</span>], optional = true }
 libc = <span class="c-str">"0.2"</span>
-nokhwa = { version = <span class="c-str">"0.10.11"</span>, features = [<span class="c-str">"input-native"</span>] }
+nokhwa = { version = <span class="c-str">"0.10.11"</span>, features = [<span class="c-str">"input-native"</span>], optional = true }
 
 <span class="c-cm"># Windows: nokhwa (Media Foundation — no extra deps needed)</span>
 <span class="c-ty">[target.'cfg(target_os = <span class="c-str">"windows"</span>)'.dependencies]</span>
-nokhwa = { version = <span class="c-str">"0.10.11"</span>, features = [<span class="c-str">"input-native"</span>] }
+nokhwa = { version = <span class="c-str">"0.10.11"</span>, features = [<span class="c-str">"input-native"</span>], optional = true }
 
 <span class="c-cm"># macOS: nokhwa (AVFoundation — no extra deps needed)</span>
 <span class="c-ty">[target.'cfg(target_os = <span class="c-str">"macos"</span>)'.dependencies]</span>
-nokhwa = { version = <span class="c-str">"0.10.11"</span>, features = [<span class="c-str">"input-native"</span>] }
+nokhwa = { version = <span class="c-str">"0.10.11"</span>, features = [<span class="c-str">"input-native"</span>], optional = true }
 
 <span class="c-cm"># Other Unix (BSDs): libc for stderr suppression</span>
 <span class="c-ty">[target.'cfg(all(unix, not(target_os = <span class="c-str">"linux"</span>), not(target_os = <span class="c-str">"macos"</span>)))'.dependencies]</span>
@@ -218,14 +231,20 @@ libc = <span class="c-str">"0.2"</span></code></pre>
   <p class="filename">src/event.rs — complete</p>
 <pre><code><span class="c-cm">//! Shared types that cross the UI ↔ network boundary.</span>
 
-<span class="c-kw">use</span> iroh::<span class="c-ty">EndpointAddr</span>;
-<span class="c-kw">use</span> iroh::<span class="c-ty">EndpointId</span>;
+<span class="c-kw">use</span> iroh::{<span class="c-ty">EndpointAddr</span>, <span class="c-ty">EndpointId</span>};
 <span class="c-kw">use</span> serde::{<span class="c-ty">Deserialize</span>, <span class="c-ty">Serialize</span>};
 
 <span class="c-cm">/// UI → Network: things the user does.</span>
+<span class="c-mac">#[allow(dead_code)]</span>
 <span class="c-kw">pub</span> <span class="c-kw">enum</span> <span class="c-ty">Command</span> {
-    <span class="c-cm">/// Send a chat text message to the flock.</span>
-    <span class="c-ty">SendText</span>(<span class="c-ty">String</span>),
+    <span class="c-cm">/// Send a chat text message to a specific flock.</span>
+    <span class="c-ty">SendText</span> {
+        flock: <span class="c-ty">String</span>,
+        body: <span class="c-ty">String</span>,
+    },
+    <span class="c-ty">JoinFlock</span> {
+        code: <span class="c-ty">String</span>,
+    },
     <span class="c-cm">/// Start a voice call with a peer.</span>
     <span class="c-ty">StartCall</span>(<span class="c-ty">EndpointAddr</span>),
     <span class="c-cm">/// End the current call.</span>
@@ -237,10 +256,13 @@ libc = <span class="c-str">"0.2"</span></code></pre>
 }
 
 <span class="c-cm">/// Network → UI: things that happen.</span>
+<span class="c-mac">#[allow(dead_code)]</span>
 <span class="c-mac">#[derive(Debug)]</span>
 <span class="c-kw">pub</span> <span class="c-kw">enum</span> <span class="c-ty">AppEvent</span> {
-    <span class="c-cm">/// A chat message was received (or echoed back).</span>
-    <span class="c-ty">Message</span>(<span class="c-ty">ChatMessage</span>),
+    <span class="c-cm">/// A chat message was received (or echoed back) in a flock.</span>
+    <span class="c-ty">Message</span> { flock: <span class="c-ty">String</span>, msg: <span class="c-ty">ChatMessage</span> },
+    <span class="c-cm">/// Successfully joined a flock.</span>
+    <span class="c-ty">JoinedFlock</span> { code: <span class="c-ty">String</span> },
     <span class="c-cm">/// A gossip neighbor came online.</span>
     <span class="c-ty">PeerConnected</span>(<span class="c-ty">EndpointId</span>),
     <span class="c-cm">/// A gossip neighbor went offline.</span>
@@ -251,7 +273,12 @@ libc = <span class="c-str">"0.2"</span></code></pre>
     <span class="c-ty">Ticket</span>(<span class="c-ty">String</span>),
     <span class="c-cm">/// A 20 ms Opus voice frame arrived.</span>
     <span class="c-ty">VoiceFrame</span>(<span class="c-ty">Vec</span>&lt;u8&gt;),
+    <span class="c-cm">/// A JPEG video frame arrived.</span>
     <span class="c-ty">VideoFrame</span>(<span class="c-ty">Vec</span>&lt;u8&gt;),
+    <span class="c-cm">/// A peer changed their presence status.</span>
+    <span class="c-ty">PeerStatus</span>(<span class="c-ty">EndpointId</span>, <span class="c-ty">BirdStatus</span>),
+    <span class="c-cm">/// A batch of recent chat messages (history sync).</span>
+    <span class="c-ty">HistoryChunk</span>(<span class="c-ty">Vec</span>&lt;<span class="c-ty">ChatMessage</span>&gt;),
 }
 
 <span class="c-cm">/// A chat message that travels over the gossip layer.</span>
@@ -274,6 +301,16 @@ libc = <span class="c-str">"0.2"</span></code></pre>
     <span class="c-ty">Chat</span>(<span class="c-ty">ChatMessage</span>),
     <span class="c-cm">/// A peer announcing their display name.</span>
     <span class="c-ty">Profile</span> { id: <span class="c-ty">EndpointId</span>, name: <span class="c-ty">String</span> },
+    <span class="c-cm">/// A peer announcing their current status.</span>
+    <span class="c-ty">Status</span> { id: <span class="c-ty">EndpointId</span>, status: <span class="c-ty">BirdStatus</span> },
+}
+
+<span class="c-cm">/// A bird's current presence state.</span>
+<span class="c-mac">#[derive(Clone, Copy, Debug, Serialize, Deserialize)]</span>
+<span class="c-kw">pub</span> <span class="c-kw">enum</span> <span class="c-ty">BirdStatus</span> {
+    <span class="c-ty">Online</span>,
+    <span class="c-ty">Idle</span>,
+    <span class="c-ty">InCall</span>,
 }</code></pre>
 
   <h3>The unglamorous plumbing</h3>
@@ -359,7 +396,14 @@ libc = <span class="c-str">"0.2"</span></code></pre>
     }
 }
 
+<span class="c-cm">/// Log an informational message with a timestamp.</span>
+<span class="c-mac">#[allow(dead_code)]</span>
+<span class="c-kw">pub</span> <span class="c-kw">fn</span> <span class="c-fn">info</span>(msg: &amp;str) {
+    <span class="c-fn">log</span>(<span class="c-str">"INFO:  "</span>, msg);
+}
+
 <span class="c-cm">/// Log an error message with a timestamp.</span>
+<span class="c-mac">#[allow(dead_code)]</span>
 <span class="c-kw">pub</span> <span class="c-kw">fn</span> <span class="c-fn">error</span>(msg: &amp;str) {
     <span class="c-fn">log</span>(<span class="c-str">"ERROR: "</span>, msg);
 }
@@ -380,6 +424,7 @@ libc = <span class="c-str">"0.2"</span></code></pre>
 <span class="c-cm">/// native code (e.g. ALSA's "cannot find card '0'") are discarded.</span>
 <span class="c-cm">///</span>
 <span class="c-cm">/// On non-Unix platforms this is a no-op.</span>
+<span class="c-mac">#[allow(dead_code)]</span>
 <span class="c-mac">#[cfg(unix)]</span>
 <span class="c-kw">pub</span> <span class="c-kw">fn</span> suppress_stderr&lt;<span class="c-ty">F</span>, <span class="c-ty">R</span>&gt;(f: <span class="c-ty">F</span>) -&gt; <span class="c-ty">R</span>
 <span class="c-kw">where</span>
@@ -413,6 +458,7 @@ libc = <span class="c-str">"0.2"</span></code></pre>
     }
 }
 
+<span class="c-mac">#[allow(dead_code)]</span>
 <span class="c-mac">#[cfg(not(unix))]</span>
 <span class="c-kw">pub</span> <span class="c-kw">fn</span> suppress_stderr&lt;<span class="c-ty">F</span>, <span class="c-ty">R</span>&gt;(f: <span class="c-ty">F</span>) -&gt; <span class="c-ty">R</span>
 <span class="c-kw">where</span>
@@ -451,21 +497,30 @@ libc = <span class="c-str">"0.2"</span></code></pre>
 <span class="c-cm">//! E2E encrypted via iroh's QUIC TLS 1.3.</span>
 
 <span class="c-kw">use</span> <span class="c-kw">crate</span>::crypto::<span class="c-ty">FlockCrypto</span>;
+<span class="c-mac">#[cfg(feature = "audio")]</span>
+<span class="c-kw">use</span> <span class="c-kw">crate</span>::event::<span class="c-ty">BirdStatus</span>;
 <span class="c-kw">use</span> <span class="c-kw">crate</span>::event::{<span class="c-ty">AppEvent</span>, <span class="c-ty">ChatMessage</span>, <span class="c-ty">Command</span>, <span class="c-ty">GossipPayload</span>};
-<span class="c-kw">use</span> iroh::{
-    <span class="c-ty">Endpoint</span>, <span class="c-ty">EndpointId</span>,
-    endpoint::{<span class="c-ty">Connection</span>, presets},
-    protocol::<span class="c-ty">Router</span>,
-};
+<span class="c-mac">#[cfg(any(feature = "audio", feature = "video"))]</span>
+<span class="c-kw">use</span> iroh::endpoint::<span class="c-ty">Connection</span>;
+<span class="c-kw">use</span> iroh::{<span class="c-ty">Endpoint</span>, <span class="c-ty">EndpointId</span>, endpoint::presets, protocol::<span class="c-ty">Router</span>};
 <span class="c-kw">use</span> iroh_gossip::{
     api::<span class="c-ty">Event</span>,
     net::{<span class="c-ty">GOSSIP_ALPN</span>, <span class="c-ty">Gossip</span>},
     proto::<span class="c-ty">TopicId</span>,
 };
 <span class="c-kw">use</span> n0_future::<span class="c-ty">StreamExt</span>;
+<span class="c-kw">use</span> std::collections::<span class="c-ty">HashMap</span>;
 <span class="c-kw">use</span> std::sync::<span class="c-ty">Arc</span>;
 <span class="c-kw">use</span> std::sync::atomic::<span class="c-ty">AtomicBool</span>;
 <span class="c-kw">use</span> tokio::sync::mpsc;
+
+<span class="c-kw">use</span> iroh_gossip::api::<span class="c-ty">GossipSender</span>;
+
+<span class="c-mac">#[allow(dead_code)]</span>
+<span class="c-kw">struct</span> <span class="c-ty">FlockHandle</span> {
+    sender: <span class="c-ty">GossipSender</span>,
+    crypto: <span class="c-ty">FlockCrypto</span>,
+}
 
 <span class="c-cm">/// Derive a deterministic gossip [`TopicId`] from a name via SHA-256.</span>
 <span class="c-kw">pub</span> <span class="c-kw">fn</span> <span class="c-fn">topic_for</span>(name: &amp;str) -&gt; <span class="c-ty">TopicId</span> {
@@ -487,6 +542,12 @@ libc = <span class="c-str">"0.2"</span></code></pre>
         .<span class="c-fn">map</span>(|c| <span class="c-mac">format!</span>(<span class="c-str">"{:02X}{:02X}{:02X}"</span>, c[<span class="c-num">0</span>], c[<span class="c-num">1</span>], c[<span class="c-num">2</span>]))
         .<span class="c-fn">collect</span>();
     <span class="c-mac">format!</span>(<span class="c-str">"BIRD-{}"</span>, colors.<span class="c-fn">join</span>(<span class="c-str">"-"</span>))
+}
+
+<span class="c-cm">/// Alias for `encode_node_id`. Used by the roost module for community codes.</span>
+<span class="c-mac">#[allow(dead_code)]</span>
+<span class="c-kw">pub</span> <span class="c-kw">fn</span> <span class="c-fn">room_code_from_node_id</span>(node_id: &amp;<span class="c-ty">EndpointId</span>) -&gt; <span class="c-ty">String</span> {
+    <span class="c-fn">encode_node_id</span>(node_id)
 }
 
 <span class="c-cm">/// Decode a ticket string back into a node ID, or `None` if malformed.</span>
@@ -514,6 +575,7 @@ libc = <span class="c-str">"0.2"</span></code></pre>
 }
 
 <span class="c-cm">/// Encrypt, serialize, and broadcast a gossip payload.</span>
+<span class="c-mac">#[allow(dead_code)]</span>
 <span class="c-kw">async</span> <span class="c-kw">fn</span> <span class="c-fn">broadcast_payload</span>(
     sender: &amp;iroh_gossip::api::<span class="c-ty">GossipSender</span>,
     crypto: &amp;<span class="c-ty">FlockCrypto</span>,
@@ -532,6 +594,7 @@ libc = <span class="c-str">"0.2"</span></code></pre>
 <span class="c-cm">/// * `cmd_rx` - commands from the UI.</span>
 <span class="c-cm">/// * `evt_tx` - events back to the UI.</span>
 <span class="c-cm">/// * `muted` - shared flag toggled by the UI to mute the mic.</span>
+<span class="c-cm">/// * `my_node_id` - our own node identity (from the persistent secret key).</span>
 <span class="c-cm">/// * `name` - our display name, announced to peers and used as chat author.</span>
 <span class="c-cm">/// * `input_device` - optional CPAL input device name for the mic.</span>
 <span class="c-kw">pub</span> <span class="c-kw">async</span> <span class="c-kw">fn</span> <span class="c-fn">run</span>(
@@ -539,9 +602,11 @@ libc = <span class="c-str">"0.2"</span></code></pre>
     <span class="c-kw">mut</span> cmd_rx: mpsc::<span class="c-ty">UnboundedReceiver</span>&lt;<span class="c-ty">Command</span>&gt;,
     evt_tx: mpsc::<span class="c-ty">UnboundedSender</span>&lt;<span class="c-ty">AppEvent</span>&gt;,
     muted: <span class="c-ty">Arc</span>&lt;<span class="c-ty">AtomicBool</span>&gt;,
+    my_node_id: <span class="c-ty">EndpointId</span>,
     name: <span class="c-ty">String</span>,
     input_device: <span class="c-ty">Option</span>&lt;<span class="c-ty">String</span>&gt;,
 ) -&gt; anyhow::<span class="c-ty">Result</span>&lt;()&gt; {
+    <span class="c-kw">let</span> _ = (&amp;muted, &amp;input_device);
     <span class="c-kw">let</span> secret = <span class="c-kw">crate</span>::config::<span class="c-ty">Profile</span>::<span class="c-fn">load_or_create_secret</span>();
     <span class="c-kw">let</span> endpoint = <span class="c-ty">Endpoint</span>::<span class="c-fn">builder</span>(presets::<span class="c-ty">N0</span>)
         .<span class="c-fn">secret_key</span>(secret)
@@ -549,121 +614,157 @@ libc = <span class="c-str">"0.2"</span></code></pre>
         .<span class="c-kw">await</span>?;
     endpoint.<span class="c-fn">online</span>().<span class="c-kw">await</span>;
 
-    <span class="c-kw">let</span> my_node_id = endpoint.<span class="c-fn">addr</span>().id;
-    <span class="c-kw">let</span> opener_id = bootstrap.<span class="c-fn">first</span>().<span class="c-fn">copied</span>().<span class="c-fn">unwrap_or</span>(my_node_id);
-
-    <span class="c-cm">// The room code is the opener's full encoded node ID. Both the opener</span>
-    <span class="c-cm">// and every joiner derive the same topic and encryption key from it.</span>
-    <span class="c-kw">let</span> room_code = <span class="c-fn">encode_node_id</span>(&amp;opener_id);
-    <span class="c-kw">let</span> topic = <span class="c-fn">topic_for</span>(&amp;<span class="c-mac">format!</span>(<span class="c-str">"starling/flock/{room_code}"</span>));
-    <span class="c-kw">let</span> crypto = <span class="c-ty">FlockCrypto</span>::<span class="c-fn">from_room_code</span>(&amp;room_code);
-
     <span class="c-kw">let</span> my_code = <span class="c-fn">encode_node_id</span>(&amp;my_node_id);
     <span class="c-kw">crate</span>::logger::<span class="c-fn">warn</span>(&amp;<span class="c-mac">format!</span>(<span class="c-str">"endpoint bound: room_code={my_code}"</span>));
     <span class="c-kw">let</span> _ = evt_tx.<span class="c-fn">send</span>(<span class="c-ty">AppEvent</span>::<span class="c-ty">Ticket</span>(my_code));
 
     <span class="c-kw">let</span> gossip = <span class="c-ty">Gossip</span>::<span class="c-fn">builder</span>().<span class="c-fn">spawn</span>(endpoint.<span class="c-fn">clone</span>());
+    <span class="c-kw">let</span> history: <span class="c-kw">crate</span>::sync::<span class="c-ty">History</span> = <span class="c-ty">Default</span>::<span class="c-fn">default</span>();
 
-    <span class="c-kw">let</span> _router = <span class="c-ty">Router</span>::<span class="c-fn">builder</span>(endpoint.<span class="c-fn">clone</span>())
-        .<span class="c-fn">accept</span>(<span class="c-ty">GOSSIP_ALPN</span>, gossip.<span class="c-fn">clone</span>())
-        .<span class="c-fn">accept</span>(
+    <span class="c-mac">#[allow(unused_mut)]</span>
+    <span class="c-kw">let</span> <span class="c-kw">mut</span> builder = <span class="c-ty">Router</span>::<span class="c-fn">builder</span>(endpoint.<span class="c-fn">clone</span>()).<span class="c-fn">accept</span>(<span class="c-ty">GOSSIP_ALPN</span>, gossip.<span class="c-fn">clone</span>());
+    <span class="c-mac">#[cfg(feature = "audio")]</span>
+    {
+        builder = builder.<span class="c-fn">accept</span>(
             <span class="c-kw">crate</span>::call::<span class="c-ty">VOICE_ALPN</span>,
             <span class="c-ty">VoiceProto</span> {
                 evt_tx: evt_tx.<span class="c-fn">clone</span>(),
             },
-        )
-        .<span class="c-fn">accept</span>(
+        );
+    }
+    <span class="c-mac">#[cfg(feature = "video")]</span>
+    {
+        builder = builder.<span class="c-fn">accept</span>(
             <span class="c-kw">crate</span>::call::<span class="c-ty">VIDEO_ALPN</span>,
             <span class="c-ty">VideoProto</span> {
                 evt_tx: evt_tx.<span class="c-fn">clone</span>(),
             },
+        );
+    }
+    <span class="c-kw">let</span> _router = builder
+        .<span class="c-fn">accept</span>(
+            <span class="c-kw">crate</span>::sync::<span class="c-ty">SYNC_ALPN</span>,
+            <span class="c-kw">crate</span>::sync::<span class="c-ty">SyncProto</span> {
+                history: history.<span class="c-fn">clone</span>(),
+            },
         )
         .<span class="c-fn">spawn</span>();
 
-    <span class="c-kw">let</span> (sender, <span class="c-kw">mut</span> receiver) = gossip.<span class="c-fn">subscribe</span>(topic, bootstrap).<span class="c-kw">await</span>?.<span class="c-fn">split</span>();
+    <span class="c-cm">// Build the flock map. No initial flock — the user creates or joins</span>
+    <span class="c-cm">// a room via Ctrl+N or Ctrl+J.</span>
+    <span class="c-kw">let</span> <span class="c-kw">mut</span> flocks: <span class="c-ty">HashMap</span>&lt;<span class="c-ty">String</span>, <span class="c-ty">FlockHandle</span>&gt; = <span class="c-ty">HashMap</span>::<span class="c-fn">new</span>();
 
+    <span class="c-cm">// If bootstrapping from CLI (starling join BIRD-...), join immediately.</span>
+    <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Some</span>(&amp;opener) = bootstrap.<span class="c-fn">first</span>() {
+        <span class="c-kw">let</span> room = <span class="c-fn">encode_node_id</span>(&amp;opener);
+        <span class="c-fn">join_flock</span>(
+            &amp;gossip,
+            room,
+            bootstrap,
+            &amp;<span class="c-kw">mut</span> flocks,
+            evt_tx.<span class="c-fn">clone</span>(),
+            my_node_id,
+            name.<span class="c-fn">clone</span>(),
+        )
+        .<span class="c-kw">await</span>?;
+        <span class="c-kw">if</span> opener != my_node_id {
+            <span class="c-kw">let</span> (ep, tx) = (endpoint.<span class="c-fn">clone</span>(), evt_tx.<span class="c-fn">clone</span>());
+            tokio::<span class="c-fn">spawn</span>(<span class="c-kw">async</span> <span class="c-kw">move</span> {
+                <span class="c-kw">let</span> _ = <span class="c-kw">crate</span>::sync::<span class="c-fn">backfill</span>(ep, opener, <span class="c-num">0</span>, tx).<span class="c-kw">await</span>;
+            });
+        }
+    }
+
+    <span class="c-mac">#[cfg(feature = "audio")]</span>
+    <span class="c-mac">#[allow(unused)]</span>
     <span class="c-kw">let</span> <span class="c-kw">mut</span> _mic_stream: <span class="c-ty">Option</span>&lt;cpal::<span class="c-ty">Stream</span>&gt; = <span class="c-ty">None</span>;
+    <span class="c-mac">#[cfg(feature = "video")]</span>
+    <span class="c-mac">#[allow(unused)]</span>
     <span class="c-kw">let</span> <span class="c-kw">mut</span> _cam_thread: <span class="c-ty">Option</span>&lt;std::thread::<span class="c-ty">JoinHandle</span>&lt;()&gt;&gt; = <span class="c-ty">None</span>;
 
     <span class="c-kw">loop</span> {
-        tokio::<span class="c-mac">select!</span> {
-            <span class="c-ty">Some</span>(cmd) = cmd_rx.<span class="c-fn">recv</span>() =&gt; <span class="c-kw">match</span> cmd {
-                <span class="c-ty">Command</span>::<span class="c-ty">SendText</span>(text) =&gt; {
+        <span class="c-kw">let</span> <span class="c-ty">Some</span>(cmd) = cmd_rx.<span class="c-fn">recv</span>().<span class="c-kw">await</span> <span class="c-kw">else</span> {
+            <span class="c-kw">break</span>;
+        };
+        <span class="c-kw">match</span> cmd {
+            <span class="c-ty">Command</span>::<span class="c-ty">SendText</span> { flock, body } =&gt; {
+                <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Some</span>(h) = flocks.<span class="c-fn">get</span>(&amp;flock) {
                     <span class="c-kw">let</span> msg = <span class="c-ty">ChatMessage</span> {
                         id: uuid::<span class="c-ty">Uuid</span>::<span class="c-fn">new_v4</span>().<span class="c-fn">to_string</span>(),
                         author: name.<span class="c-fn">clone</span>(),
-                        body: text,
+                        body,
                         ts: chrono::<span class="c-ty">Utc</span>::<span class="c-fn">now</span>().<span class="c-fn">timestamp_millis</span>(),
                     };
-                    <span class="c-fn">broadcast_payload</span>(&amp;sender, &amp;crypto, &amp;<span class="c-ty">GossipPayload</span>::<span class="c-ty">Chat</span>(msg.<span class="c-fn">clone</span>())).<span class="c-kw">await</span>?;
-                    <span class="c-kw">let</span> _ = evt_tx.<span class="c-fn">send</span>(<span class="c-ty">AppEvent</span>::<span class="c-ty">Message</span>(msg));
-                }
-
-                <span class="c-ty">Command</span>::<span class="c-ty">StartCall</span>(addr) =&gt; {
-                    <span class="c-kw">let</span> (mic_tx, mic_rx) = mpsc::<span class="c-fn">unbounded_channel</span>();
-                    _mic_stream = <span class="c-ty">Some</span>(<span class="c-kw">crate</span>::voice::<span class="c-fn">start_capture</span>(
-                        mic_tx, muted.<span class="c-fn">clone</span>(), input_device.<span class="c-fn">as_deref</span>(),
-                    )?);
-                    <span class="c-kw">let</span> ep = endpoint.<span class="c-fn">clone</span>();
-                    tokio::<span class="c-fn">spawn</span>(<span class="c-kw">async</span> <span class="c-kw">move</span> {
-                        <span class="c-kw">let</span> _ = <span class="c-kw">crate</span>::call::<span class="c-fn">place_call</span>(ep, addr, mic_rx).<span class="c-kw">await</span>;
-                    });
-                }
-
-                <span class="c-ty">Command</span>::<span class="c-ty">HangUp</span> =&gt; { _mic_stream = <span class="c-ty">None</span>; }
-
-                <span class="c-ty">Command</span>::<span class="c-ty">StartVideo</span>(addr) =&gt; {
-                    <span class="c-kw">let</span> (cam_tx, cam_rx) = mpsc::<span class="c-fn">unbounded_channel</span>();
-                    _cam_thread = <span class="c-ty">Some</span>(<span class="c-kw">crate</span>::video::<span class="c-fn">start_camera</span>(cam_tx)?);
-                    <span class="c-kw">let</span> ep = endpoint.<span class="c-fn">clone</span>();
-                    tokio::<span class="c-fn">spawn</span>(<span class="c-kw">async</span> <span class="c-kw">move</span> {
-                        <span class="c-kw">let</span> _ = <span class="c-kw">crate</span>::call::<span class="c-fn">place_video</span>(ep, addr, cam_rx).<span class="c-kw">await</span>;
-                    });
-                }
-                <span class="c-ty">Command</span>::<span class="c-ty">StopVideo</span> =&gt; { _cam_thread = <span class="c-ty">None</span>; }
-
-                <span class="c-ty">Command</span>::<span class="c-ty">Quit</span> =&gt; <span class="c-kw">break</span>,
-            },
-
-            <span class="c-ty">Some</span>(event) = receiver.<span class="c-fn">next</span>() =&gt; {
-                <span class="c-kw">match</span> event {
-                    <span class="c-ty">Ok</span>(<span class="c-ty">Event</span>::<span class="c-ty">Received</span>(msg)) =&gt; {
-                        <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Some</span>(plaintext) = crypto.<span class="c-fn">decrypt</span>(&amp;msg.content) {
-                            <span class="c-kw">match</span> postcard::from_bytes::&lt;<span class="c-ty">GossipPayload</span>&gt;(&amp;plaintext) {
-                                <span class="c-ty">Ok</span>(<span class="c-ty">GossipPayload</span>::<span class="c-ty">Chat</span>(m)) =&gt; {
-                                    <span class="c-kw">let</span> _ = evt_tx.<span class="c-fn">send</span>(<span class="c-ty">AppEvent</span>::<span class="c-ty">Message</span>(m));
-                                }
-                                <span class="c-ty">Ok</span>(<span class="c-ty">GossipPayload</span>::<span class="c-ty">Profile</span> { id, name }) =&gt; {
-                                    <span class="c-kw">let</span> _ = evt_tx.<span class="c-fn">send</span>(<span class="c-ty">AppEvent</span>::<span class="c-ty">PeerNamed</span>(id, name));
-                                }
-                                <span class="c-ty">Err</span>(e) =&gt; {
-                                    <span class="c-kw">crate</span>::logger::<span class="c-fn">error</span>(&amp;<span class="c-mac">format!</span>(<span class="c-str">"gossip deserialize error: {e}"</span>));
-                                }
-                            }
-                        }
-                    }
-                    <span class="c-ty">Ok</span>(<span class="c-ty">Event</span>::<span class="c-ty">NeighborUp</span>(id)) =&gt; {
-                        <span class="c-kw">crate</span>::logger::<span class="c-fn">warn</span>(&amp;<span class="c-mac">format!</span>(<span class="c-str">"neighbor up: {}"</span>, id));
-                        <span class="c-kw">let</span> _ = evt_tx.<span class="c-fn">send</span>(<span class="c-ty">AppEvent</span>::<span class="c-ty">PeerConnected</span>(id));
-                        <span class="c-cm">// Announce our profile to the new peer.</span>
-                        <span class="c-kw">let</span> payload = <span class="c-ty">GossipPayload</span>::<span class="c-ty">Profile</span> {
-                            id: my_node_id,
-                            name: name.<span class="c-fn">clone</span>(),
-                        };
-                        <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Err</span>(e) = <span class="c-fn">broadcast_payload</span>(&amp;sender, &amp;crypto, &amp;payload).<span class="c-kw">await</span> {
-                            <span class="c-kw">crate</span>::logger::<span class="c-fn">error</span>(&amp;<span class="c-mac">format!</span>(<span class="c-str">"profile broadcast failed: {e}"</span>));
-                        }
-                    }
-                    <span class="c-ty">Ok</span>(<span class="c-ty">Event</span>::<span class="c-ty">NeighborDown</span>(id)) =&gt; {
-                        <span class="c-kw">crate</span>::logger::<span class="c-fn">warn</span>(&amp;<span class="c-mac">format!</span>(<span class="c-str">"neighbor down: {}"</span>, id));
-                        <span class="c-kw">let</span> _ = evt_tx.<span class="c-fn">send</span>(<span class="c-ty">AppEvent</span>::<span class="c-ty">PeerDisconnected</span>(id));
-                    }
-                    <span class="c-ty">Ok</span>(_) =&gt; {}
-                    <span class="c-ty">Err</span>(e) =&gt; {
-                        <span class="c-kw">crate</span>::logger::<span class="c-fn">error</span>(&amp;<span class="c-mac">format!</span>(<span class="c-str">"gossip stream error: {e}"</span>));
-                    }
+                    <span class="c-kw">let</span> plaintext = postcard::<span class="c-fn">to_stdvec</span>(&amp;<span class="c-ty">GossipPayload</span>::<span class="c-ty">Chat</span>(msg.<span class="c-fn">clone</span>()))?;
+                    h.sender
+                        .<span class="c-fn">broadcast</span>(h.crypto.<span class="c-fn">encrypt</span>(&amp;plaintext).<span class="c-fn">into</span>())
+                        .<span class="c-kw">await</span>?;
+                    <span class="c-kw">let</span> _ = evt_tx.<span class="c-fn">send</span>(<span class="c-ty">AppEvent</span>::<span class="c-ty">Message</span> { flock, msg });
                 }
             }
+
+            <span class="c-ty">Command</span>::<span class="c-ty">JoinFlock</span> { code } =&gt; {
+                <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Some</span>(opener) = <span class="c-fn">decode_node_id</span>(&amp;code) {
+                    <span class="c-kw">let</span> room = <span class="c-fn">encode_node_id</span>(&amp;opener);
+                    <span class="c-kw">let</span> _ = <span class="c-fn">join_flock</span>(
+                        &amp;gossip,
+                        room,
+                        <span class="c-mac">vec!</span>[opener],
+                        &amp;<span class="c-kw">mut</span> flocks,
+                        evt_tx.<span class="c-fn">clone</span>(),
+                        my_node_id,
+                        name.<span class="c-fn">clone</span>(),
+                    )
+                    .<span class="c-kw">await</span>;
+                }
+            }
+
+            <span class="c-mac">#[cfg(feature = "audio")]</span>
+            <span class="c-ty">Command</span>::<span class="c-ty">StartCall</span>(addr) =&gt; {
+                <span class="c-kw">let</span> (mic_tx, mic_rx) = mpsc::<span class="c-fn">unbounded_channel</span>();
+                _mic_stream = <span class="c-ty">Some</span>(<span class="c-kw">crate</span>::voice::<span class="c-fn">start_capture</span>(
+                    mic_tx,
+                    muted.<span class="c-fn">clone</span>(),
+                    input_device.<span class="c-fn">as_deref</span>(),
+                )?);
+                <span class="c-kw">let</span> ep = endpoint.<span class="c-fn">clone</span>();
+                tokio::<span class="c-fn">spawn</span>(<span class="c-kw">async</span> <span class="c-kw">move</span> {
+                    <span class="c-kw">let</span> _ = <span class="c-kw">crate</span>::call::<span class="c-fn">place_call</span>(ep, addr, mic_rx).<span class="c-kw">await</span>;
+                });
+            }
+            <span class="c-mac">#[cfg(not(feature = "audio"))]</span>
+            <span class="c-ty">Command</span>::<span class="c-ty">StartCall</span>(_) =&gt; {
+                <span class="c-kw">crate</span>::logger::<span class="c-fn">warn</span>(<span class="c-str">"voice call not supported (audio feature disabled)"</span>);
+            }
+
+            <span class="c-mac">#[cfg(feature = "audio")]</span>
+            <span class="c-ty">Command</span>::<span class="c-ty">HangUp</span> =&gt; {
+                _mic_stream = <span class="c-ty">None</span>;
+            }
+            <span class="c-mac">#[cfg(not(feature = "audio"))]</span>
+            <span class="c-ty">Command</span>::<span class="c-ty">HangUp</span> =&gt; {}
+
+            <span class="c-mac">#[cfg(feature = "video")]</span>
+            <span class="c-ty">Command</span>::<span class="c-ty">StartVideo</span>(addr) =&gt; {
+                <span class="c-kw">let</span> (cam_tx, cam_rx) = mpsc::<span class="c-fn">unbounded_channel</span>();
+                _cam_thread = <span class="c-ty">Some</span>(<span class="c-kw">crate</span>::video::<span class="c-fn">start_camera</span>(cam_tx)?);
+                <span class="c-kw">let</span> ep = endpoint.<span class="c-fn">clone</span>();
+                tokio::<span class="c-fn">spawn</span>(<span class="c-kw">async</span> <span class="c-kw">move</span> {
+                    <span class="c-kw">let</span> _ = <span class="c-kw">crate</span>::call::<span class="c-fn">place_video</span>(ep, addr, cam_rx).<span class="c-kw">await</span>;
+                });
+            }
+            <span class="c-mac">#[cfg(not(feature = "video"))]</span>
+            <span class="c-ty">Command</span>::<span class="c-ty">StartVideo</span>(_) =&gt; {
+                <span class="c-kw">crate</span>::logger::<span class="c-fn">warn</span>(<span class="c-str">"video not supported (video feature disabled)"</span>);
+            }
+            <span class="c-mac">#[cfg(feature = "video")]</span>
+            <span class="c-ty">Command</span>::<span class="c-ty">StopVideo</span> =&gt; {
+                _cam_thread = <span class="c-ty">None</span>;
+            }
+            <span class="c-mac">#[cfg(not(feature = "video"))]</span>
+            <span class="c-ty">Command</span>::<span class="c-ty">StopVideo</span> =&gt; {}
+
+            <span class="c-ty">Command</span>::<span class="c-ty">Quit</span> =&gt; <span class="c-kw">break</span>,
         }
     }
 
@@ -671,11 +772,13 @@ libc = <span class="c-str">"0.2"</span></code></pre>
 }
 
 <span class="c-cm">/// Protocol handler for incoming voice call connections.</span>
+<span class="c-mac">#[cfg(feature = "audio")]</span>
 <span class="c-mac">#[derive(Debug)]</span>
 <span class="c-kw">struct</span> <span class="c-ty">VoiceProto</span> {
     evt_tx: mpsc::<span class="c-ty">UnboundedSender</span>&lt;<span class="c-ty">AppEvent</span>&gt;,
 }
 
+<span class="c-mac">#[cfg(feature = "audio")]</span>
 <span class="c-kw">impl</span> iroh::protocol::<span class="c-ty">ProtocolHandler</span> <span class="c-kw">for</span> <span class="c-ty">VoiceProto</span> {
     <span class="c-kw">async</span> <span class="c-kw">fn</span> <span class="c-fn">accept</span>(&amp;self, conn: <span class="c-ty">Connection</span>) -&gt; <span class="c-ty">Result</span>&lt;(), iroh::protocol::<span class="c-ty">AcceptError</span>&gt; {
         <span class="c-kw">let</span> _ = <span class="c-kw">crate</span>::call::<span class="c-fn">handle_incoming</span>(conn, self.evt_tx.<span class="c-fn">clone</span>()).<span class="c-kw">await</span>;
@@ -684,16 +787,92 @@ libc = <span class="c-str">"0.2"</span></code></pre>
 }
 
 <span class="c-cm">/// Protocol handler for incoming video call connections.</span>
+<span class="c-mac">#[cfg(feature = "video")]</span>
 <span class="c-mac">#[derive(Debug)]</span>
 <span class="c-kw">struct</span> <span class="c-ty">VideoProto</span> {
     evt_tx: mpsc::<span class="c-ty">UnboundedSender</span>&lt;<span class="c-ty">AppEvent</span>&gt;,
 }
 
+<span class="c-mac">#[cfg(feature = "video")]</span>
 <span class="c-kw">impl</span> iroh::protocol::<span class="c-ty">ProtocolHandler</span> <span class="c-kw">for</span> <span class="c-ty">VideoProto</span> {
     <span class="c-kw">async</span> <span class="c-kw">fn</span> <span class="c-fn">accept</span>(&amp;self, conn: <span class="c-ty">Connection</span>) -&gt; <span class="c-ty">Result</span>&lt;(), iroh::protocol::<span class="c-ty">AcceptError</span>&gt; {
         <span class="c-kw">let</span> _ = <span class="c-kw">crate</span>::call::<span class="c-fn">recv_video</span>(conn, self.evt_tx.<span class="c-fn">clone</span>()).<span class="c-kw">await</span>;
         <span class="c-ty">Ok</span>(())
     }
+}
+
+<span class="c-kw">async</span> <span class="c-kw">fn</span> <span class="c-fn">join_flock</span>(
+    gossip: &amp;<span class="c-ty">Gossip</span>,
+    code: <span class="c-ty">String</span>,
+    boot: <span class="c-ty">Vec</span>&lt;<span class="c-ty">EndpointId</span>&gt;,
+    flocks: &amp;<span class="c-kw">mut</span> <span class="c-ty">HashMap</span>&lt;<span class="c-ty">String</span>, <span class="c-ty">FlockHandle</span>&gt;,
+    evt_tx: mpsc::<span class="c-ty">UnboundedSender</span>&lt;<span class="c-ty">AppEvent</span>&gt;,
+    my_id: <span class="c-ty">EndpointId</span>,
+    name: <span class="c-ty">String</span>,
+) -&gt; anyhow::<span class="c-ty">Result</span>&lt;()&gt; {
+    <span class="c-kw">if</span> flocks.<span class="c-fn">contains_key</span>(&amp;code) {
+        <span class="c-kw">return</span> <span class="c-ty">Ok</span>(());
+    }
+
+    <span class="c-kw">let</span> topic = <span class="c-fn">topic_for</span>(&amp;<span class="c-mac">format!</span>(<span class="c-str">"starling/flock/{code}"</span>));
+    <span class="c-kw">let</span> crypto = <span class="c-ty">FlockCrypto</span>::<span class="c-fn">from_room_code</span>(&amp;code);
+    <span class="c-kw">let</span> (sender, <span class="c-kw">mut</span> receiver) = gossip.<span class="c-fn">subscribe</span>(topic, boot).<span class="c-kw">await</span>?.<span class="c-fn">split</span>();
+
+    <span class="c-kw">let</span> (rx_crypto, rx_code, rx_tx, rx_sender, rx_my_id, rx_name) = (
+        <span class="c-ty">FlockCrypto</span>::<span class="c-fn">from_room_code</span>(&amp;code),
+        code.<span class="c-fn">clone</span>(),
+        evt_tx.<span class="c-fn">clone</span>(),
+        sender.<span class="c-fn">clone</span>(),
+        my_id,
+        name,
+    );
+    tokio::<span class="c-fn">spawn</span>(<span class="c-kw">async</span> <span class="c-kw">move</span> {
+        <span class="c-kw">while</span> <span class="c-kw">let</span> <span class="c-ty">Some</span>(event) = receiver.<span class="c-fn">next</span>().<span class="c-kw">await</span> {
+            <span class="c-kw">match</span> event {
+                <span class="c-ty">Ok</span>(<span class="c-ty">Event</span>::<span class="c-ty">Received</span>(msg)) =&gt; {
+                    <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Some</span>(plain) = rx_crypto.<span class="c-fn">decrypt</span>(&amp;msg.content) {
+                        <span class="c-kw">match</span> postcard::from_bytes::&lt;<span class="c-ty">GossipPayload</span>&gt;(&amp;plain) {
+                            <span class="c-ty">Ok</span>(<span class="c-ty">GossipPayload</span>::<span class="c-ty">Chat</span>(m)) =&gt; {
+                                <span class="c-kw">let</span> _ = rx_tx.<span class="c-fn">send</span>(<span class="c-ty">AppEvent</span>::<span class="c-ty">Message</span> {
+                                    flock: rx_code.<span class="c-fn">clone</span>(),
+                                    msg: m,
+                                });
+                            }
+                            <span class="c-ty">Ok</span>(<span class="c-ty">GossipPayload</span>::<span class="c-ty">Profile</span> { id, name }) =&gt; {
+                                <span class="c-kw">let</span> _ = rx_tx.<span class="c-fn">send</span>(<span class="c-ty">AppEvent</span>::<span class="c-ty">PeerNamed</span>(id, name));
+                            }
+                            <span class="c-ty">Ok</span>(<span class="c-ty">GossipPayload</span>::<span class="c-ty">Status</span> { id, status }) =&gt; {
+                                <span class="c-kw">let</span> _ = rx_tx.<span class="c-fn">send</span>(<span class="c-ty">AppEvent</span>::<span class="c-ty">PeerStatus</span>(id, status));
+                            }
+                            <span class="c-ty">Err</span>(e) =&gt; {
+                                <span class="c-kw">crate</span>::logger::<span class="c-fn">error</span>(&amp;<span class="c-mac">format!</span>(<span class="c-str">"gossip deserialize error: {e}"</span>));
+                            }
+                        }
+                    }
+                }
+
+                <span class="c-ty">Ok</span>(<span class="c-ty">Event</span>::<span class="c-ty">NeighborUp</span>(id)) =&gt; {
+                    <span class="c-kw">let</span> _ = rx_tx.<span class="c-fn">send</span>(<span class="c-ty">AppEvent</span>::<span class="c-ty">PeerConnected</span>(id));
+                    <span class="c-cm">// Announce our profile so the new peer sees our name.</span>
+                    <span class="c-kw">let</span> payload = <span class="c-ty">GossipPayload</span>::<span class="c-ty">Profile</span> {
+                        id: rx_my_id,
+                        name: rx_name.<span class="c-fn">clone</span>(),
+                    };
+                    <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Ok</span>(plain) = postcard::<span class="c-fn">to_stdvec</span>(&amp;payload) {
+                        <span class="c-kw">let</span> _ = rx_sender.<span class="c-fn">broadcast</span>(rx_crypto.<span class="c-fn">encrypt</span>(&amp;plain).<span class="c-fn">into</span>()).<span class="c-kw">await</span>;
+                    }
+                }
+                <span class="c-ty">Ok</span>(<span class="c-ty">Event</span>::<span class="c-ty">NeighborDown</span>(id)) =&gt; {
+                    <span class="c-kw">let</span> _ = rx_tx.<span class="c-fn">send</span>(<span class="c-ty">AppEvent</span>::<span class="c-ty">PeerDisconnected</span>(id));
+                }
+                _ =&gt; {}
+            }
+        }
+    });
+
+    flocks.<span class="c-fn">insert</span>(code.<span class="c-fn">clone</span>(), <span class="c-ty">FlockHandle</span> { sender, crypto });
+    <span class="c-kw">let</span> _ = evt_tx.<span class="c-fn">send</span>(<span class="c-ty">AppEvent</span>::<span class="c-ty">JoinedFlock</span> { code });
+    <span class="c-ty">Ok</span>(())
 }</code></pre>
 
   <div class="callout"><span class="lbl">The one idea that matters</span>The <code class="inl">tokio::select!</code> loop is the heart of every phase, shipped and future. It waits on "did the user do something" and "did the murmuration do something" simultaneously. Voice added arms to it; video, presence, and roosts will too. The loop shape never changes.</div>
@@ -702,7 +881,7 @@ libc = <span class="c-str">"0.2"</span></code></pre>
   <p class="filename">src/ui.rs — complete</p>
 <pre><code><span class="c-cm">//! UI state and rendering.</span>
 
-<span class="c-kw">use</span> <span class="c-kw">crate</span>::event::<span class="c-ty">ChatMessage</span>;
+<span class="c-kw">use</span> <span class="c-kw">crate</span>::event::{<span class="c-ty">BirdStatus</span>, <span class="c-ty">ChatMessage</span>};
 <span class="c-kw">use</span> image::<span class="c-ty">RgbImage</span>;
 <span class="c-kw">use</span> iroh::{<span class="c-ty">EndpointAddr</span>, <span class="c-ty">EndpointId</span>};
 <span class="c-kw">use</span> ratatui::{
@@ -711,36 +890,63 @@ libc = <span class="c-str">"0.2"</span></code></pre>
 };
 <span class="c-kw">use</span> std::collections::<span class="c-ty">HashMap</span>;
 
+<span class="c-cm">/// A single flock (room) with its message list.</span>
+<span class="c-mac">#[derive(Default)]</span>
+<span class="c-kw">pub</span> <span class="c-kw">struct</span> <span class="c-ty">FlockView</span> {
+    <span class="c-kw">pub</span> code: <span class="c-ty">String</span>,
+    <span class="c-kw">pub</span> messages: <span class="c-ty">Vec</span>&lt;<span class="c-ty">ChatMessage</span>&gt;,
+    <span class="c-kw">pub</span> unread: usize,
+}
+
 <span class="c-mac">#[derive(Default)]</span>
 <span class="c-kw">pub</span> <span class="c-kw">struct</span> <span class="c-ty">App</span> {
     <span class="c-cm">/// Display name shown to other peers.</span>
     <span class="c-kw">pub</span> name: <span class="c-ty">String</span>,
-    <span class="c-cm">/// Chat messages received from peers.</span>
-    <span class="c-kw">pub</span> messages: <span class="c-ty">Vec</span>&lt;<span class="c-ty">ChatMessage</span>&gt;,
+    <span class="c-cm">/// All joined flocks.</span>
+    <span class="c-kw">pub</span> flocks: <span class="c-ty">Vec</span>&lt;<span class="c-ty">FlockView</span>&gt;,
+    <span class="c-cm">/// Index into `flocks` of the currently selected flock.</span>
+    <span class="c-kw">pub</span> current_flock: usize,
     <span class="c-cm">/// Text currently being typed in the message box.</span>
     <span class="c-kw">pub</span> input: <span class="c-ty">String</span>,
     <span class="c-cm">/// Connected remote peers, by EndpointId.</span>
     <span class="c-kw">pub</span> peers: <span class="c-ty">Vec</span>&lt;<span class="c-ty">EndpointId</span>&gt;,
     <span class="c-cm">/// Index into `peers` of the currently highlighted peer.</span>
     <span class="c-kw">pub</span> selected_peer: usize,
-    <span class="c-cm">/// The room code / invite: the flock opener's full encoded node ID.</span>
-    <span class="c-cm">/// This is both displayed in the header and what peers join with.</span>
+    <span class="c-cm">/// Our own persistent invite code (set by Ticket). Used when the user</span>
+    <span class="c-cm">/// creates a room so others can join them.</span>
     <span class="c-kw">pub</span> node_id: <span class="c-ty">Option</span>&lt;<span class="c-ty">String</span>&gt;,
     <span class="c-cm">/// Whether the invite popup is currently displayed.</span>
     <span class="c-kw">pub</span> show_invite: bool,
+    <span class="c-cm">/// Whether the create-room confirmation popup is shown.</span>
+    <span class="c-kw">pub</span> show_create_room: bool,
+    <span class="c-cm">/// Whether the join-room popup is shown.</span>
+    <span class="c-kw">pub</span> show_join_room: bool,
+    <span class="c-cm">/// Text input for the join-room code.</span>
+    <span class="c-kw">pub</span> join_input: <span class="c-ty">String</span>,
     <span class="c-cm">/// Whether an active voice call is in progress.</span>
+    <span class="c-mac">#[allow(dead_code)]</span>
     <span class="c-kw">pub</span> in_call: bool,
     <span class="c-cm">/// Whether the local microphone is muted.</span>
+    <span class="c-mac">#[allow(dead_code)]</span>
     <span class="c-kw">pub</span> muted: bool,
     <span class="c-cm">/// Maps peer EndpointId → display name (from profile announcements).</span>
     <span class="c-kw">pub</span> peer_names: <span class="c-ty">HashMap</span>&lt;<span class="c-ty">EndpointId</span>, <span class="c-ty">String</span>&gt;,
+    <span class="c-cm">/// Maps peer EndpointId → current presence status.</span>
+    <span class="c-kw">pub</span> peer_status: <span class="c-ty">HashMap</span>&lt;<span class="c-ty">EndpointId</span>, <span class="c-ty">BirdStatus</span>&gt;,
     <span class="c-cm">/// Latest decoded video frame (JPEG → RgbImage).</span>
+    <span class="c-mac">#[allow(dead_code)]</span>
     <span class="c-kw">pub</span> video_frame: <span class="c-ty">Option</span>&lt;<span class="c-ty">RgbImage</span>&gt;,
     <span class="c-cm">/// Whether the video pane is currently shown.</span>
+    <span class="c-mac">#[allow(dead_code)]</span>
     <span class="c-kw">pub</span> show_video: bool,
 }
 
 <span class="c-kw">impl</span> <span class="c-ty">App</span> {
+    <span class="c-cm">/// Return a mutable reference to the currently active flock view.</span>
+    <span class="c-kw">pub</span> <span class="c-kw">fn</span> <span class="c-fn">active</span>(&amp;<span class="c-kw">mut</span> self) -&gt; <span class="c-ty">Option</span>&lt;&amp;<span class="c-kw">mut</span> <span class="c-ty">FlockView</span>&gt; {
+        self.flocks.<span class="c-fn">get_mut</span>(self.current_flock)
+    }
+
     <span class="c-cm">/// Total birds in the room: the local user plus connected peers.</span>
     <span class="c-kw">pub</span> <span class="c-kw">fn</span> <span class="c-fn">bird_count</span>(&amp;self) -&gt; usize {
         self.peers.<span class="c-fn">len</span>() + <span class="c-num">1</span>
@@ -754,6 +960,7 @@ libc = <span class="c-str">"0.2"</span></code></pre>
     }
 
     <span class="c-cm">/// Address of the currently selected peer, if any.</span>
+    <span class="c-mac">#[allow(dead_code)]</span>
     <span class="c-kw">pub</span> <span class="c-kw">fn</span> <span class="c-fn">selected_peer_addr</span>(&amp;self) -&gt; <span class="c-ty">Option</span>&lt;<span class="c-ty">EndpointAddr</span>&gt; {
         self.peers
             .<span class="c-fn">get</span>(self.selected_peer)
@@ -778,29 +985,69 @@ libc = <span class="c-str">"0.2"</span></code></pre>
     ])
     .<span class="c-fn">split</span>(f.<span class="c-fn">area</span>());
 
-    <span class="c-cm">// ── Header: color swatches + full node code ───────────────────────</span>
+    <span class="c-cm">// ── Header: current flock's room code with color swatches ───────</span>
     <span class="c-kw">let</span> header = <span class="c-ty">Layout</span>::<span class="c-fn">vertical</span>([<span class="c-ty">Constraint</span>::<span class="c-ty">Length</span>(<span class="c-num">1</span>), <span class="c-ty">Constraint</span>::<span class="c-ty">Length</span>(<span class="c-num">1</span>)]).<span class="c-fn">split</span>(chunks[<span class="c-num">0</span>]);
 
-    <span class="c-kw">let</span> full_code = app.node_id.<span class="c-fn">as_deref</span>().<span class="c-fn">unwrap_or</span>(<span class="c-str">""</span>);
-    <span class="c-kw">let</span> <span class="c-kw">mut</span> swatch_spans = <span class="c-fn">color_swatches</span>(full_code);
-    <span class="c-kw">if</span> swatch_spans.<span class="c-fn">is_empty</span>() {
-        swatch_spans.<span class="c-fn">push</span>(<span class="c-ty">Span</span>::<span class="c-fn">styled</span>(
-            <span class="c-str">" waiting for endpoint..."</span>,
-            <span class="c-ty">Style</span>::<span class="c-fn">new</span>().<span class="c-fn">fg</span>(<span class="c-ty">Color</span>::<span class="c-ty">DarkGray</span>),
-        ));
+    <span class="c-kw">let</span> flock_code = app
+        .flocks
+        .<span class="c-fn">get</span>(app.current_flock)
+        .<span class="c-fn">map</span>(|fv| fv.code.<span class="c-fn">as_str</span>())
+        .<span class="c-fn">unwrap_or</span>(<span class="c-str">""</span>);
+    <span class="c-kw">let</span> swatch_spans = <span class="c-fn">color_swatches</span>(flock_code);
+    <span class="c-kw">if</span> !swatch_spans.<span class="c-fn">is_empty</span>() {
+        f.<span class="c-fn">render_widget</span>(<span class="c-ty">Line</span>::<span class="c-fn">from</span>(swatch_spans), header[<span class="c-num">0</span>]);
     }
-    f.<span class="c-fn">render_widget</span>(<span class="c-ty">Line</span>::<span class="c-fn">from</span>(swatch_spans), header[<span class="c-num">0</span>]);
 
+    <span class="c-kw">if</span> !flock_code.<span class="c-fn">is_empty</span>() {
+        f.<span class="c-fn">render_widget</span>(
+            <span class="c-ty">Paragraph</span>::<span class="c-fn">new</span>(<span class="c-mac">format!</span>(<span class="c-str">" {}"</span>, flock_code)).<span class="c-fn">style</span>(<span class="c-ty">Style</span>::<span class="c-fn">new</span>().<span class="c-fn">fg</span>(<span class="c-ty">Color</span>::<span class="c-ty">DarkGray</span>)),
+            header[<span class="c-num">1</span>],
+        );
+    }
+
+    <span class="c-cm">// ── Flock rail + Messages + Birds panel ────────────────────────────</span>
+    <span class="c-kw">let</span> middle = <span class="c-ty">Layout</span>::<span class="c-fn">horizontal</span>([
+        <span class="c-ty">Constraint</span>::<span class="c-ty">Length</span>(<span class="c-num">14</span>),
+        <span class="c-ty">Constraint</span>::<span class="c-ty">Min</span>(<span class="c-num">1</span>),
+        <span class="c-ty">Constraint</span>::<span class="c-ty">Length</span>(<span class="c-num">24</span>),
+    ])
+    .<span class="c-fn">split</span>(chunks[<span class="c-num">1</span>]);
+
+    <span class="c-cm">// ── Flock rail (left) ────────────────────────────────────────────</span>
+    <span class="c-kw">let</span> rail_items: <span class="c-ty">Vec</span>&lt;<span class="c-ty">ListItem</span>&gt; = app
+        .flocks
+        .<span class="c-fn">iter</span>()
+        .<span class="c-fn">enumerate</span>()
+        .<span class="c-fn">map</span>(|(i, fv)| {
+            <span class="c-kw">let</span> mark = <span class="c-kw">if</span> i == app.current_flock { <span class="c-str">"&gt; "</span> } <span class="c-kw">else</span> { <span class="c-str">"  "</span> };
+            <span class="c-kw">let</span> unread = <span class="c-kw">if</span> fv.unread &gt; <span class="c-num">0</span> {
+                <span class="c-mac">format!</span>(<span class="c-str">" ({})"</span>, fv.unread)
+            } <span class="c-kw">else</span> {
+                <span class="c-ty">String</span>::<span class="c-fn">new</span>()
+            };
+            <span class="c-kw">let</span> label = &amp;fv.code[..<span class="c-num">10</span>.<span class="c-fn">min</span>(fv.code.<span class="c-fn">len</span>())];
+            <span class="c-ty">ListItem</span>::<span class="c-fn">new</span>(<span class="c-mac">format!</span>(<span class="c-str">"{mark}{label}{unread}"</span>))
+        })
+        .<span class="c-fn">collect</span>();
+
+    <span class="c-kw">let</span> flock_count = app.flocks.<span class="c-fn">len</span>();
     f.<span class="c-fn">render_widget</span>(
-        <span class="c-ty">Paragraph</span>::<span class="c-fn">new</span>(<span class="c-mac">format!</span>(<span class="c-str">" {}"</span>, full_code)).<span class="c-fn">style</span>(<span class="c-ty">Style</span>::<span class="c-fn">new</span>().<span class="c-fn">fg</span>(<span class="c-ty">Color</span>::<span class="c-ty">DarkGray</span>)),
-        header[<span class="c-num">1</span>],
+        <span class="c-ty">List</span>::<span class="c-fn">new</span>(rail_items).<span class="c-fn">block</span>(
+            <span class="c-ty">Block</span>::<span class="c-fn">default</span>()
+                .<span class="c-fn">borders</span>(<span class="c-ty">Borders</span>::<span class="c-ty">ALL</span>)
+                .<span class="c-fn">title</span>(<span class="c-mac">format!</span>(<span class="c-str">" flocks ({flock_count}) "</span>)),
+        ),
+        middle[<span class="c-num">0</span>],
     );
 
-    <span class="c-cm">// ── Messages + Birds panel ────────────────────────────────────────</span>
-    <span class="c-kw">let</span> middle = <span class="c-ty">Layout</span>::<span class="c-fn">horizontal</span>([<span class="c-ty">Constraint</span>::<span class="c-ty">Min</span>(<span class="c-num">1</span>), <span class="c-ty">Constraint</span>::<span class="c-ty">Length</span>(<span class="c-num">24</span>)]).<span class="c-fn">split</span>(chunks[<span class="c-num">1</span>]);
+    <span class="c-cm">// ── Messages (centre) ────────────────────────────────────────────</span>
+    <span class="c-kw">let</span> active_msgs: &amp;[<span class="c-ty">ChatMessage</span>] = app
+        .flocks
+        .<span class="c-fn">get</span>(app.current_flock)
+        .<span class="c-fn">map</span>(|fv| fv.messages.<span class="c-fn">as_slice</span>())
+        .<span class="c-fn">unwrap_or</span>(&amp;[]);
 
-    <span class="c-kw">let</span> items: <span class="c-ty">Vec</span>&lt;<span class="c-ty">ListItem</span>&gt; = app
-        .messages
+    <span class="c-kw">let</span> items: <span class="c-ty">Vec</span>&lt;<span class="c-ty">ListItem</span>&gt; = active_msgs
         .<span class="c-fn">iter</span>()
         .<span class="c-fn">map</span>(|m| {
             <span class="c-ty">ListItem</span>::<span class="c-fn">new</span>(<span class="c-ty">Line</span>::<span class="c-fn">from</span>(<span class="c-mac">vec!</span>[
@@ -813,11 +1060,18 @@ libc = <span class="c-str">"0.2"</span></code></pre>
         })
         .<span class="c-fn">collect</span>();
 
+    <span class="c-kw">let</span> flock_label = app
+        .flocks
+        .<span class="c-fn">get</span>(app.current_flock)
+        .<span class="c-fn">map</span>(|fv| fv.code.<span class="c-fn">as_str</span>())
+        .<span class="c-fn">unwrap_or</span>(<span class="c-str">""</span>);
+
     <span class="c-cm">// When video is showing, split the message area into messages (60%)</span>
     <span class="c-cm">// and video (40%). Otherwise the messages take the full width.</span>
+    <span class="c-mac">#[cfg(feature = "video")]</span>
     <span class="c-kw">let</span> msg_area = <span class="c-kw">if</span> app.show_video {
         <span class="c-kw">let</span> panes = <span class="c-ty">Layout</span>::<span class="c-fn">horizontal</span>([<span class="c-ty">Constraint</span>::<span class="c-ty">Percentage</span>(<span class="c-num">60</span>), <span class="c-ty">Constraint</span>::<span class="c-ty">Percentage</span>(<span class="c-num">40</span>)])
-            .<span class="c-fn">split</span>(middle[<span class="c-num">0</span>]);
+            .<span class="c-fn">split</span>(middle[<span class="c-num">1</span>]);
         <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Some</span>(img) = &amp;app.video_frame {
             <span class="c-kw">let</span> inner = panes[<span class="c-num">1</span>].<span class="c-fn">inner</span>(<span class="c-ty">Margin</span> {
                 vertical: <span class="c-num">1</span>,
@@ -832,19 +1086,21 @@ libc = <span class="c-str">"0.2"</span></code></pre>
         }
         panes[<span class="c-num">0</span>]
     } <span class="c-kw">else</span> {
-        middle[<span class="c-num">0</span>]
+        middle[<span class="c-num">1</span>]
     };
+    <span class="c-mac">#[cfg(not(feature = "video"))]</span>
+    <span class="c-kw">let</span> msg_area = middle[<span class="c-num">1</span>];
 
     f.<span class="c-fn">render_widget</span>(
-        <span class="c-ty">List</span>::<span class="c-fn">new</span>(items).<span class="c-fn">block</span>(
-            <span class="c-ty">Block</span>::<span class="c-fn">default</span>()
-                .<span class="c-fn">borders</span>(<span class="c-ty">Borders</span>::<span class="c-ty">ALL</span>)
-                .<span class="c-fn">title</span>(<span class="c-mac">format!</span>(<span class="c-str">" #global . {} birds "</span>, app.<span class="c-fn">bird_count</span>())),
-        ),
+        <span class="c-ty">List</span>::<span class="c-fn">new</span>(items).<span class="c-fn">block</span>(<span class="c-ty">Block</span>::<span class="c-fn">default</span>().<span class="c-fn">borders</span>(<span class="c-ty">Borders</span>::<span class="c-ty">ALL</span>).<span class="c-fn">title</span>(<span class="c-mac">format!</span>(
+            <span class="c-str">" {} . {} birds "</span>,
+            flock_label,
+            app.<span class="c-fn">bird_count</span>()
+        ))),
         msg_area,
     );
 
-    <span class="c-cm">// Birds panel — local user first, then remote peers with names.</span>
+    <span class="c-cm">// ── Birds panel (right) ──────────────────────────────────────────</span>
     <span class="c-kw">let</span> <span class="c-kw">mut</span> peer_items: <span class="c-ty">Vec</span>&lt;<span class="c-ty">ListItem</span>&gt; = <span class="c-ty">Vec</span>::<span class="c-fn">new</span>();
     peer_items.<span class="c-fn">push</span>(<span class="c-ty">ListItem</span>::<span class="c-fn">new</span>(<span class="c-ty">Line</span>::<span class="c-fn">from</span>(<span class="c-mac">vec!</span>[
         <span class="c-ty">Span</span>::<span class="c-fn">raw</span>(<span class="c-str">"  "</span>),
@@ -856,23 +1112,52 @@ libc = <span class="c-str">"0.2"</span></code></pre>
 
     <span class="c-kw">for</span> (i, id) <span class="c-kw">in</span> app.peers.<span class="c-fn">iter</span>().<span class="c-fn">enumerate</span>() {
         <span class="c-kw">let</span> prefix = <span class="c-kw">if</span> i == app.selected_peer { <span class="c-str">"&gt; "</span> } <span class="c-kw">else</span> { <span class="c-str">"  "</span> };
+        <span class="c-kw">let</span> glyph = <span class="c-kw">match</span> app.peer_status.<span class="c-fn">get</span>(id) {
+            <span class="c-ty">Some</span>(<span class="c-ty">BirdStatus</span>::<span class="c-ty">InCall</span>) =&gt; <span class="c-str">"🔊"</span>,
+            <span class="c-ty">Some</span>(<span class="c-ty">BirdStatus</span>::<span class="c-ty">Idle</span>) =&gt; <span class="c-str">"◌"</span>,
+            _ =&gt; <span class="c-str">"●"</span>,
+        };
         <span class="c-kw">let</span> display = app.<span class="c-fn">peer_display_name</span>(id);
-        peer_items.<span class="c-fn">push</span>(<span class="c-ty">ListItem</span>::<span class="c-fn">new</span>(<span class="c-mac">format!</span>(<span class="c-str">"{prefix}{display}"</span>)));
+        peer_items.<span class="c-fn">push</span>(<span class="c-ty">ListItem</span>::<span class="c-fn">new</span>(<span class="c-mac">format!</span>(<span class="c-str">"{prefix}{glyph} {display}"</span>)));
     }
 
     f.<span class="c-fn">render_widget</span>(
         <span class="c-ty">List</span>::<span class="c-fn">new</span>(peer_items).<span class="c-fn">block</span>(<span class="c-ty">Block</span>::<span class="c-fn">default</span>().<span class="c-fn">borders</span>(<span class="c-ty">Borders</span>::<span class="c-ty">ALL</span>).<span class="c-fn">title</span>(<span class="c-str">" birds "</span>)),
-        middle[<span class="c-num">1</span>],
+        middle[<span class="c-num">2</span>],
     );
 
     <span class="c-cm">// ── Status ────────────────────────────────────────────────────────</span>
-    <span class="c-kw">let</span> status = <span class="c-kw">if</span> app.in_call {
+    <span class="c-kw">let</span> status = <span class="c-kw">if</span> app.flocks.<span class="c-fn">is_empty</span>() {
+        <span class="c-str">" Ctrl+N to create a room . Ctrl+J to join a room"</span>.<span class="c-fn">into</span>()
+    } <span class="c-kw">else</span> <span class="c-kw">if</span> app.in_call {
+        <span class="c-kw">let</span> flock_info = <span class="c-kw">if</span> app.flocks.<span class="c-fn">len</span>() &gt; <span class="c-num">1</span> {
+            <span class="c-mac">format!</span>(
+                <span class="c-str">" . Alt+Up/Down to switch ({}/{})"</span>,
+                app.current_flock + <span class="c-num">1</span>,
+                app.flocks.<span class="c-fn">len</span>()
+            )
+        } <span class="c-kw">else</span> {
+            <span class="c-ty">String</span>::<span class="c-fn">new</span>()
+        };
         <span class="c-mac">format!</span>(
-            <span class="c-str">" in call . {} . Ctrl+K to hang up"</span>,
-            <span class="c-kw">if</span> app.muted { <span class="c-str">"muted"</span> } <span class="c-kw">else</span> { <span class="c-str">"live"</span> }
+            <span class="c-str">" in call . {} . Ctrl+K to hang up{}"</span>,
+            <span class="c-kw">if</span> app.muted { <span class="c-str">"muted"</span> } <span class="c-kw">else</span> { <span class="c-str">"live"</span> },
+            flock_info
         )
     } <span class="c-kw">else</span> {
-        <span class="c-str">" idle . Ctrl+K to call . Tab to cycle . Ctrl+M to mute . i = invite"</span>.<span class="c-fn">into</span>()
+        <span class="c-kw">let</span> flock_info = <span class="c-kw">if</span> app.flocks.<span class="c-fn">len</span>() &gt; <span class="c-num">1</span> {
+            <span class="c-mac">format!</span>(
+                <span class="c-str">" . Alt+Up/Down to switch ({}/{})"</span>,
+                app.current_flock + <span class="c-num">1</span>,
+                app.flocks.<span class="c-fn">len</span>()
+            )
+        } <span class="c-kw">else</span> {
+            <span class="c-ty">String</span>::<span class="c-fn">new</span>()
+        };
+        <span class="c-mac">format!</span>(
+            <span class="c-str">" Ctrl+K to call . Tab to cycle . Ctrl+M to mute . i = invite{}"</span>,
+            flock_info
+        )
     };
     f.<span class="c-fn">render_widget</span>(
         <span class="c-ty">Paragraph</span>::<span class="c-fn">new</span>(status).<span class="c-fn">style</span>(<span class="c-ty">Style</span>::<span class="c-fn">new</span>().<span class="c-fn">fg</span>(<span class="c-ty">Color</span>::<span class="c-ty">Rgb</span>(<span class="c-num">111</span>, <span class="c-num">174</span>, <span class="c-num">157</span>))),
@@ -886,9 +1171,13 @@ libc = <span class="c-str">"0.2"</span></code></pre>
         chunks[<span class="c-num">3</span>],
     );
 
-    <span class="c-cm">// ── Invite popup ──────────────────────────────────────────────────</span>
+    <span class="c-cm">// ── Popups ───────────────────────────────────────────────────────</span>
     <span class="c-kw">if</span> app.show_invite {
         <span class="c-fn">draw_invite_popup</span>(f, app);
+    } <span class="c-kw">else</span> <span class="c-kw">if</span> app.show_create_room {
+        <span class="c-fn">draw_create_room_popup</span>(f, app);
+    } <span class="c-kw">else</span> <span class="c-kw">if</span> app.show_join_room {
+        <span class="c-fn">draw_join_room_popup</span>(f, app);
     }
 }
 
@@ -896,7 +1185,11 @@ libc = <span class="c-str">"0.2"</span></code></pre>
     <span class="c-kw">let</span> area = f.<span class="c-fn">area</span>();
     f.<span class="c-fn">render_widget</span>(<span class="c-ty">Clear</span>, area);
 
-    <span class="c-kw">let</span> code = app.node_id.<span class="c-fn">as_deref</span>().<span class="c-fn">unwrap_or</span>(<span class="c-str">"waiting for endpoint..."</span>);
+    <span class="c-kw">let</span> code = app
+        .flocks
+        .<span class="c-fn">get</span>(app.current_flock)
+        .<span class="c-fn">map</span>(|fv| fv.code.<span class="c-fn">as_str</span>())
+        .<span class="c-fn">unwrap_or</span>(<span class="c-str">""</span>);
     <span class="c-kw">let</span> swatch_spans = <span class="c-fn">color_swatches</span>(code);
 
     <span class="c-kw">let</span> swatch_line_len = swatch_spans.<span class="c-fn">len</span>();
@@ -957,6 +1250,84 @@ libc = <span class="c-str">"0.2"</span></code></pre>
     );
 }
 
+<span class="c-kw">fn</span> <span class="c-fn">draw_create_room_popup</span>(f: &amp;<span class="c-kw">mut</span> <span class="c-ty">Frame</span>, app: &amp;<span class="c-ty">App</span>) {
+    <span class="c-kw">let</span> area = f.<span class="c-fn">area</span>();
+    <span class="c-kw">let</span> width = <span class="c-num">50</span>.<span class="c-fn">min</span>(area.width);
+    <span class="c-kw">let</span> height = <span class="c-num">8</span>.<span class="c-fn">min</span>(area.height);
+    <span class="c-kw">let</span> popup = <span class="c-ty">Rect</span>::<span class="c-fn">new</span>(
+        area.x + (area.width.<span class="c-fn">saturating_sub</span>(width)) / <span class="c-num">2</span>,
+        area.y + (area.height.<span class="c-fn">saturating_sub</span>(height)) / <span class="c-num">2</span>,
+        width,
+        height,
+    );
+
+    f.<span class="c-fn">render_widget</span>(<span class="c-ty">Clear</span>, popup);
+    f.<span class="c-fn">render_widget</span>(
+        <span class="c-ty">Block</span>::<span class="c-fn">default</span>()
+            .<span class="c-fn">borders</span>(<span class="c-ty">Borders</span>::<span class="c-ty">ALL</span>)
+            .<span class="c-fn">title</span>(<span class="c-str">" Create Room "</span>),
+        popup,
+    );
+
+    <span class="c-kw">let</span> inner = popup.<span class="c-fn">inner</span>(<span class="c-ty">Margin</span> {
+        vertical: <span class="c-num">1</span>,
+        horizontal: <span class="c-num">2</span>,
+    });
+    <span class="c-kw">let</span> chunks = <span class="c-ty">Layout</span>::<span class="c-fn">vertical</span>([<span class="c-ty">Constraint</span>::<span class="c-ty">Length</span>(<span class="c-num">1</span>), <span class="c-ty">Constraint</span>::<span class="c-ty">Min</span>(<span class="c-num">1</span>)]).<span class="c-fn">split</span>(inner);
+
+    <span class="c-kw">let</span> invite = app.node_id.<span class="c-fn">as_deref</span>().<span class="c-fn">unwrap_or</span>(<span class="c-str">"waiting for endpoint..."</span>);
+    f.<span class="c-fn">render_widget</span>(
+        <span class="c-ty">Paragraph</span>::<span class="c-fn">new</span>(<span class="c-mac">format!</span>(
+            <span class="c-str">"Your invite code: {}\n\nPress Enter to create, Esc to cancel."</span>,
+            invite
+        ))
+        .<span class="c-fn">style</span>(<span class="c-ty">Style</span>::<span class="c-fn">new</span>().<span class="c-fn">fg</span>(<span class="c-ty">Color</span>::<span class="c-ty">White</span>)),
+        chunks[<span class="c-num">0</span>],
+    );
+}
+
+<span class="c-kw">fn</span> <span class="c-fn">draw_join_room_popup</span>(f: &amp;<span class="c-kw">mut</span> <span class="c-ty">Frame</span>, app: &amp;<span class="c-ty">App</span>) {
+    <span class="c-kw">let</span> area = f.<span class="c-fn">area</span>();
+    <span class="c-kw">let</span> width = <span class="c-num">60</span>.<span class="c-fn">min</span>(area.width);
+    <span class="c-kw">let</span> height = <span class="c-num">8</span>.<span class="c-fn">min</span>(area.height);
+    <span class="c-kw">let</span> popup = <span class="c-ty">Rect</span>::<span class="c-fn">new</span>(
+        area.x + (area.width.<span class="c-fn">saturating_sub</span>(width)) / <span class="c-num">2</span>,
+        area.y + (area.height.<span class="c-fn">saturating_sub</span>(height)) / <span class="c-num">2</span>,
+        width,
+        height,
+    );
+
+    f.<span class="c-fn">render_widget</span>(<span class="c-ty">Clear</span>, popup);
+    f.<span class="c-fn">render_widget</span>(
+        <span class="c-ty">Block</span>::<span class="c-fn">default</span>().<span class="c-fn">borders</span>(<span class="c-ty">Borders</span>::<span class="c-ty">ALL</span>).<span class="c-fn">title</span>(<span class="c-str">" Join Room "</span>),
+        popup,
+    );
+
+    <span class="c-kw">let</span> inner = popup.<span class="c-fn">inner</span>(<span class="c-ty">Margin</span> {
+        vertical: <span class="c-num">1</span>,
+        horizontal: <span class="c-num">2</span>,
+    });
+    <span class="c-kw">let</span> chunks = <span class="c-ty">Layout</span>::<span class="c-fn">vertical</span>([
+        <span class="c-ty">Constraint</span>::<span class="c-ty">Length</span>(<span class="c-num">1</span>),
+        <span class="c-ty">Constraint</span>::<span class="c-ty">Length</span>(<span class="c-num">1</span>),
+        <span class="c-ty">Constraint</span>::<span class="c-ty">Min</span>(<span class="c-num">1</span>),
+    ])
+    .<span class="c-fn">split</span>(inner);
+
+    f.<span class="c-fn">render_widget</span>(
+        <span class="c-ty">Paragraph</span>::<span class="c-fn">new</span>(<span class="c-str">"Enter the room code:"</span>).<span class="c-fn">style</span>(<span class="c-ty">Style</span>::<span class="c-fn">new</span>().<span class="c-fn">fg</span>(<span class="c-ty">Color</span>::<span class="c-ty">White</span>)),
+        chunks[<span class="c-num">0</span>],
+    );
+    f.<span class="c-fn">render_widget</span>(
+        <span class="c-ty">Paragraph</span>::<span class="c-fn">new</span>(<span class="c-mac">format!</span>(<span class="c-str">" {}_"</span>, app.join_input)).<span class="c-fn">style</span>(<span class="c-ty">Style</span>::<span class="c-fn">new</span>().<span class="c-fn">fg</span>(<span class="c-ty">Color</span>::<span class="c-ty">Yellow</span>)),
+        chunks[<span class="c-num">1</span>],
+    );
+    f.<span class="c-fn">render_widget</span>(
+        <span class="c-ty">Paragraph</span>::<span class="c-fn">new</span>(<span class="c-str">" Enter = join . Esc = cancel"</span>).<span class="c-fn">style</span>(<span class="c-ty">Style</span>::<span class="c-fn">new</span>().<span class="c-fn">fg</span>(<span class="c-ty">Color</span>::<span class="c-ty">DarkGray</span>)),
+        chunks[<span class="c-num">2</span>],
+    );
+}
+
 <span class="c-cm">/// Build the color-swatch line for a node ID: pairs of ▀▄ glyphs (each</span>
 <span class="c-cm">/// rendered full-bright over a dimmed copy) separated by spaces, one per</span>
 <span class="c-cm">/// 6-hex color group in the code. Returns an empty vec when no colors</span>
@@ -1005,25 +1376,33 @@ libc = <span class="c-str">"0.2"</span></code></pre>
 <span class="c-kw">mod</span> event;
 <span class="c-kw">mod</span> logger;
 <span class="c-kw">mod</span> net;
+<span class="c-mac">#[cfg(feature = "audio")]</span>
 <span class="c-kw">mod</span> opus_ffi;
+<span class="c-mac">#[cfg(feature = "audio")]</span>
 <span class="c-kw">mod</span> playback;
+<span class="c-kw">mod</span> roost;
 <span class="c-kw">mod</span> setup;
+<span class="c-kw">mod</span> sync;
 <span class="c-kw">mod</span> ui;
 <span class="c-kw">mod</span> util;
 <span class="c-kw">mod</span> video;
+<span class="c-mac">#[cfg(feature = "audio")]</span>
 <span class="c-kw">mod</span> voice;
 
+<span class="c-mac">#[allow(unused_imports)]</span>
 <span class="c-kw">use</span> crossterm::{
     event::{self <span class="c-kw">as</span> ct_event, <span class="c-ty">Event</span>, <span class="c-ty">KeyCode</span>, <span class="c-ty">KeyEventKind</span>, <span class="c-ty">KeyModifiers</span>},
     execute,
     terminal::*,
 };
 <span class="c-kw">use</span> event::{<span class="c-ty">AppEvent</span>, <span class="c-ty">Command</span>};
+<span class="c-mac">#[allow(unused_imports)]</span>
 <span class="c-kw">use</span> std::sync::<span class="c-ty">Arc</span>;
+<span class="c-mac">#[allow(unused_imports)]</span>
 <span class="c-kw">use</span> std::sync::atomic::{<span class="c-ty">AtomicBool</span>, <span class="c-ty">Ordering</span>};
-<span class="c-kw">use</span> std::time::{<span class="c-ty">Duration</span>, <span class="c-ty">Instant</span>};
+<span class="c-kw">use</span> std::time::<span class="c-ty">Duration</span>;
 <span class="c-kw">use</span> tokio::sync::mpsc;
-<span class="c-kw">use</span> ui::<span class="c-ty">App</span>;
+<span class="c-kw">use</span> ui::{<span class="c-ty">App</span>, <span class="c-ty">FlockView</span>};
 
 <span class="c-mac">#[tokio::main]</span>
 <span class="c-kw">async</span> <span class="c-kw">fn</span> <span class="c-fn">main</span>() -&gt; anyhow::<span class="c-ty">Result</span>&lt;()&gt; {
@@ -1039,6 +1418,179 @@ libc = <span class="c-str">"0.2"</span></code></pre>
         setup::<span class="c-fn">run_setup</span>(&amp;<span class="c-kw">mut</span> term)?;
         <span class="c-fn">disable_raw_mode</span>()?;
         <span class="c-mac">execute!</span>(term.<span class="c-fn">backend_mut</span>(), <span class="c-ty">LeaveAlternateScreen</span>)?;
+        <span class="c-kw">return</span> <span class="c-ty">Ok</span>(());
+    }
+
+    <span class="c-cm">// ── TUI-only commands ────────────────────────────────────────────</span>
+    <span class="c-cm">// `starling leave &lt;code&gt;` — print leave instructions (no-op in TUI).</span>
+    <span class="c-cm">// The user can just close the app to "leave" a flock.</span>
+    <span class="c-kw">if</span> args.<span class="c-fn">get</span>(<span class="c-num">1</span>).<span class="c-fn">map</span>(<span class="c-ty">String</span>::as_str) == <span class="c-ty">Some</span>(<span class="c-str">"leave"</span>) {
+        <span class="c-kw">let</span> _code = args.<span class="c-fn">get</span>(<span class="c-num">2</span>).<span class="c-fn">cloned</span>().<span class="c-fn">unwrap_or_default</span>();
+        <span class="c-mac">println!</span>(<span class="c-str">"To leave a flock, simply close the app (Esc)."</span>);
+        <span class="c-mac">println!</span>(<span class="c-str">"A roost can be stopped with: starling-server roost close &lt;name&gt;"</span>);
+        <span class="c-kw">return</span> <span class="c-ty">Ok</span>(());
+    }
+
+    <span class="c-cm">// `starling list` — list known roosts on disk.</span>
+    <span class="c-kw">if</span> args.<span class="c-fn">get</span>(<span class="c-num">1</span>).<span class="c-fn">map</span>(<span class="c-ty">String</span>::as_str) == <span class="c-ty">Some</span>(<span class="c-str">"list"</span>) {
+        <span class="c-kw">let</span> roosts_dir = config::<span class="c-ty">Profile</span>::<span class="c-fn">roosts_dir</span>();
+        <span class="c-kw">if</span> !roosts_dir.<span class="c-fn">exists</span>() {
+            <span class="c-mac">println!</span>(<span class="c-str">"No roosts found. Create one with: starling-server roost create &lt;name&gt;"</span>);
+            <span class="c-kw">return</span> <span class="c-ty">Ok</span>(());
+        }
+        <span class="c-kw">let</span> <span class="c-kw">mut</span> count = <span class="c-num">0</span>;
+        <span class="c-kw">for</span> entry <span class="c-kw">in</span> std::fs::<span class="c-fn">read_dir</span>(&amp;roosts_dir).<span class="c-fn">map_err</span>(|e| {
+            <span class="c-mac">eprintln!</span>(<span class="c-str">"Error reading roosts directory: {e}"</span>);
+            std::process::<span class="c-fn">exit</span>(<span class="c-num">1</span>);
+        })? {
+            <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Ok</span>(entry) = entry {
+                <span class="c-kw">if</span> entry.<span class="c-fn">file_type</span>().<span class="c-fn">map</span>(|t| t.<span class="c-fn">is_dir</span>()).<span class="c-fn">unwrap_or</span>(false) {
+                    <span class="c-kw">let</span> name = entry.<span class="c-fn">file_name</span>().<span class="c-fn">to_string_lossy</span>().<span class="c-fn">to_string</span>();
+                    <span class="c-mac">println!</span>(<span class="c-str">"  roost: {name}"</span>);
+                    count += <span class="c-num">1</span>;
+                }
+            }
+        }
+        <span class="c-kw">if</span> count == <span class="c-num">0</span> {
+            <span class="c-mac">println!</span>(<span class="c-str">"No roosts found. Create one with: starling-server roost create &lt;name&gt;"</span>);
+        }
+        <span class="c-kw">return</span> <span class="c-ty">Ok</span>(());
+    }
+
+    <span class="c-cm">// `starling doctor` — diagnose setup.</span>
+    <span class="c-kw">if</span> args.<span class="c-fn">get</span>(<span class="c-num">1</span>).<span class="c-fn">map</span>(<span class="c-ty">String</span>::as_str) == <span class="c-ty">Some</span>(<span class="c-str">"doctor"</span>) {
+        <span class="c-mac">println!</span>(<span class="c-str">"Starling Doctor"</span>);
+        <span class="c-mac">println!</span>(<span class="c-str">"---------------"</span>);
+
+        <span class="c-kw">let</span> config_dir = config::<span class="c-ty">Profile</span>::<span class="c-fn">config_dir</span>();
+        <span class="c-kw">if</span> config_dir.<span class="c-fn">exists</span>() {
+            <span class="c-mac">println!</span>(<span class="c-str">"  ✓ config directory: {}"</span>, config_dir.<span class="c-fn">display</span>());
+        } <span class="c-kw">else</span> {
+            <span class="c-mac">println!</span>(<span class="c-str">"  ✗ config directory missing — run `starling setup`"</span>);
+            <span class="c-kw">return</span> <span class="c-ty">Ok</span>(());
+        }
+
+        <span class="c-kw">let</span> identity = config_dir.<span class="c-fn">join</span>(<span class="c-str">"identity.key"</span>);
+        <span class="c-kw">if</span> identity.<span class="c-fn">exists</span>() {
+            <span class="c-mac">println!</span>(<span class="c-str">"  ✓ identity key: {}"</span>, identity.<span class="c-fn">display</span>());
+        } <span class="c-kw">else</span> {
+            <span class="c-mac">println!</span>(<span class="c-str">"  ✗ identity key missing — will be created on first launch"</span>);
+        }
+
+        <span class="c-kw">let</span> profile = config_dir.<span class="c-fn">join</span>(<span class="c-str">"profile.bin"</span>);
+        <span class="c-kw">if</span> profile.<span class="c-fn">exists</span>() {
+            <span class="c-mac">println!</span>(<span class="c-str">"  ✓ profile: {}"</span>, profile.<span class="c-fn">display</span>());
+        } <span class="c-kw">else</span> {
+            <span class="c-mac">println!</span>(<span class="c-str">"  ✗ profile not configured — run `starling setup`"</span>);
+        }
+
+        <span class="c-kw">let</span> roosts_dir = config::<span class="c-ty">Profile</span>::<span class="c-fn">roosts_dir</span>();
+        <span class="c-kw">if</span> roosts_dir.<span class="c-fn">exists</span>() {
+            <span class="c-kw">let</span> count = std::fs::<span class="c-fn">read_dir</span>(&amp;roosts_dir)
+                .<span class="c-fn">map</span>(|d| {
+                    d.<span class="c-fn">filter_map</span>(|e| e.<span class="c-fn">ok</span>())
+                        .<span class="c-fn">filter</span>(|e| e.<span class="c-fn">file_type</span>().<span class="c-fn">map</span>(|t| t.<span class="c-fn">is_dir</span>()).<span class="c-fn">unwrap_or</span>(false))
+                        .<span class="c-fn">count</span>()
+                })
+                .<span class="c-fn">unwrap_or</span>(<span class="c-num">0</span>);
+            <span class="c-mac">println!</span>(<span class="c-str">"  ✓ roosts on disk: {count}"</span>);
+            <span class="c-mac">println!</span>(<span class="c-str">"    ({})"</span>, roosts_dir.<span class="c-fn">display</span>());
+        } <span class="c-kw">else</span> {
+            <span class="c-mac">println!</span>(<span class="c-str">"  ○ no roosts directory (none created yet)"</span>);
+        }
+
+        <span class="c-mac">println!</span>();
+        <span class="c-mac">println!</span>(<span class="c-str">"System dependencies:"</span>);
+        <span class="c-kw">if</span> std::process::<span class="c-ty">Command</span>::<span class="c-fn">new</span>(<span class="c-str">"cargo"</span>)
+            .<span class="c-fn">arg</span>(<span class="c-str">"--version"</span>)
+            .<span class="c-fn">output</span>()
+            .<span class="c-fn">is_ok</span>()
+        {
+            <span class="c-mac">println!</span>(<span class="c-str">"  ✓ cargo installed"</span>);
+        } <span class="c-kw">else</span> {
+            <span class="c-mac">println!</span>(<span class="c-str">"  ✗ cargo not found — install Rust: https://rustup.rs"</span>);
+        }
+
+        <span class="c-kw">return</span> <span class="c-ty">Ok</span>(());
+    }
+
+    <span class="c-cm">// `starling logs` — show the log file path.</span>
+    <span class="c-kw">if</span> args.<span class="c-fn">get</span>(<span class="c-num">1</span>).<span class="c-fn">map</span>(<span class="c-ty">String</span>::as_str) == <span class="c-ty">Some</span>(<span class="c-str">"logs"</span>) {
+        <span class="c-mac">println!</span>(<span class="c-str">"Starling TUI logs:"</span>);
+        <span class="c-mac">println!</span>(<span class="c-str">"  logs/latest.log  (in the working directory)"</span>);
+        <span class="c-kw">return</span> <span class="c-ty">Ok</span>(());
+    }
+
+    <span class="c-cm">// `starling tui version|update|uninstall` — TUI self-management.</span>
+    <span class="c-kw">if</span> args.<span class="c-fn">get</span>(<span class="c-num">1</span>).<span class="c-fn">map</span>(<span class="c-ty">String</span>::as_str) == <span class="c-ty">Some</span>(<span class="c-str">"tui"</span>) {
+        <span class="c-kw">match</span> args.<span class="c-fn">get</span>(<span class="c-num">2</span>).<span class="c-fn">map</span>(<span class="c-ty">String</span>::as_str) {
+            <span class="c-ty">Some</span>(<span class="c-str">"version"</span>) =&gt; {
+                <span class="c-mac">println!</span>(<span class="c-str">"Starling TUI v{}"</span>, <span class="c-mac">env!</span>(<span class="c-str">"CARGO_PKG_VERSION"</span>));
+                <span class="c-kw">return</span> <span class="c-ty">Ok</span>(());
+            }
+            <span class="c-ty">Some</span>(<span class="c-str">"update"</span>) =&gt; {
+                <span class="c-mac">println!</span>(<span class="c-str">"Updating Starling TUI..."</span>);
+                <span class="c-kw">let</span> status = std::process::<span class="c-ty">Command</span>::<span class="c-fn">new</span>(<span class="c-str">"cargo"</span>)
+                    .<span class="c-fn">args</span>([
+                        <span class="c-str">"install"</span>,
+                        <span class="c-str">"starling-tui"</span>,
+                        <span class="c-str">"--git"</span>,
+                        <span class="c-str">"https://forgejo.hearthhome.lol/Saltfault/Starling-TUI.git"</span>,
+                    ])
+                    .<span class="c-fn">status</span>()
+                    .<span class="c-fn">map_err</span>(|e| anyhow::<span class="c-mac">anyhow!</span>(<span class="c-str">"failed to run cargo: {e}"</span>))?;
+                <span class="c-kw">if</span> status.<span class="c-fn">success</span>() {
+                    <span class="c-mac">println!</span>(<span class="c-str">"✓ Starling TUI updated to the latest version"</span>);
+                } <span class="c-kw">else</span> {
+                    anyhow::<span class="c-mac">bail!</span>(<span class="c-str">"update failed (exit code: {:?})"</span>, status.<span class="c-fn">code</span>());
+                }
+                <span class="c-kw">return</span> <span class="c-ty">Ok</span>(());
+            }
+            <span class="c-ty">Some</span>(<span class="c-str">"uninstall"</span>) =&gt; {
+                <span class="c-mac">println!</span>(<span class="c-str">"Uninstalling Starling TUI..."</span>);
+                <span class="c-kw">let</span> status = std::process::<span class="c-ty">Command</span>::<span class="c-fn">new</span>(<span class="c-str">"cargo"</span>)
+                    .<span class="c-fn">args</span>([<span class="c-str">"uninstall"</span>, <span class="c-str">"starling-tui"</span>])
+                    .<span class="c-fn">status</span>()
+                    .<span class="c-fn">map_err</span>(|e| anyhow::<span class="c-mac">anyhow!</span>(<span class="c-str">"failed to run cargo: {e}"</span>))?;
+                <span class="c-kw">if</span> status.<span class="c-fn">success</span>() {
+                    <span class="c-cm">// Remove config directory.</span>
+                    <span class="c-kw">let</span> config_dir = config::<span class="c-ty">Profile</span>::<span class="c-fn">config_dir</span>();
+                    <span class="c-kw">if</span> config_dir.<span class="c-fn">exists</span>() {
+                        <span class="c-kw">let</span> _ = std::fs::<span class="c-fn">remove_dir_all</span>(&amp;config_dir);
+                    }
+                    <span class="c-mac">println!</span>(<span class="c-str">"✓ Starling TUI uninstalled"</span>);
+                } <span class="c-kw">else</span> {
+                    anyhow::<span class="c-mac">bail!</span>(<span class="c-str">"uninstall failed (exit code: {:?})"</span>, status.<span class="c-fn">code</span>());
+                }
+                <span class="c-kw">return</span> <span class="c-ty">Ok</span>(());
+            }
+            _ =&gt; {
+                <span class="c-mac">eprintln!</span>(<span class="c-str">"Usage: starling tui &lt;version|update|uninstall&gt;"</span>);
+                std::process::<span class="c-fn">exit</span>(<span class="c-num">1</span>);
+            }
+        }
+    }
+
+    <span class="c-cm">// `starling help` — print usage.</span>
+    <span class="c-kw">if</span> <span class="c-mac">matches!</span>(
+        args.<span class="c-fn">get</span>(<span class="c-num">1</span>).<span class="c-fn">map</span>(<span class="c-ty">String</span>::as_str),
+        <span class="c-ty">Some</span>(<span class="c-str">"help"</span> | <span class="c-str">"--help"</span> | <span class="c-str">"-h"</span>)
+    ) {
+        <span class="c-mac">println!</span>(
+            <span class="c-str">"Starling TUI v{} — federated p2p communications"</span>,
+            <span class="c-mac">env!</span>(<span class="c-str">"CARGO_PKG_VERSION"</span>)
+        );
+        <span class="c-mac">println!</span>();
+        <span class="c-mac">println!</span>(<span class="c-str">"Usage:"</span>);
+        <span class="c-mac">println!</span>(<span class="c-str">"  starling join &lt;code&gt;                    join a flock or roost"</span>);
+        <span class="c-mac">println!</span>(<span class="c-str">"  starling open                           open the TUI"</span>);
+        <span class="c-mac">println!</span>(<span class="c-str">"  starling leave &lt;code&gt;                   leave a flock or roost"</span>);
+        <span class="c-mac">println!</span>(<span class="c-str">"  starling list                           list flocks and roosts"</span>);
+        <span class="c-mac">println!</span>(<span class="c-str">"  starling doctor                         diagnose setup"</span>);
+        <span class="c-mac">println!</span>(<span class="c-str">"  starling logs                           show log file path"</span>);
+        <span class="c-mac">println!</span>(<span class="c-str">"  starling tui version                    print version"</span>);
+        <span class="c-mac">println!</span>(<span class="c-str">"  starling tui update                     print update instructions"</span>);
+        <span class="c-mac">println!</span>(<span class="c-str">"  starling tui uninstall                  print uninstall instructions"</span>);
         <span class="c-kw">return</span> <span class="c-ty">Ok</span>(());
     }
 
@@ -1064,11 +1616,14 @@ libc = <span class="c-str">"0.2"</span></code></pre>
     <span class="c-kw">let</span> <span class="c-kw">mut</span> term = ratatui::<span class="c-ty">Terminal</span>::<span class="c-fn">new</span>(ratatui::backend::<span class="c-ty">CrosstermBackend</span>::<span class="c-fn">new</span>(stdout))?;
     <span class="c-kw">let</span> <span class="c-kw">mut</span> app = <span class="c-ty">App</span>::<span class="c-fn">default</span>();
 
-    <span class="c-cm">// For a joiner, the room code is the opener's node ID (from the join</span>
-    <span class="c-cm">// code), shown immediately. For an opener it arrives via AppEvent::Ticket.</span>
-    <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Some</span>(node_id) = bootstrap.<span class="c-fn">first</span>() {
-        app.node_id = <span class="c-ty">Some</span>(net::<span class="c-fn">encode_node_id</span>(node_id));
-    }
+    <span class="c-cm">// Derive our own node ID from the persistent secret key.</span>
+    <span class="c-cm">// We pass it to net::run for profile announcements; the Ticket</span>
+    <span class="c-cm">// event will set app.node_id once the endpoint is bound.</span>
+    <span class="c-kw">let</span> secret = config::<span class="c-ty">Profile</span>::<span class="c-fn">load_or_create_secret</span>();
+    <span class="c-kw">let</span> my_node_id: iroh::<span class="c-ty">EndpointId</span> = secret.<span class="c-fn">public</span>().<span class="c-fn">into</span>();
+
+    <span class="c-cm">// No room is open by default — the user creates one with Ctrl+N</span>
+    <span class="c-cm">// or joins one with Ctrl+J (or starling join from the CLI).</span>
 
     <span class="c-cm">// Load the profile from disk, or run the setup wizard to create one.</span>
     <span class="c-kw">let</span> profile = <span class="c-kw">match</span> profile {
@@ -1084,12 +1639,15 @@ libc = <span class="c-str">"0.2"</span></code></pre>
     };
 
     <span class="c-kw">let</span> name = profile.name;
+    <span class="c-mac">#[allow(unused)]</span>
     <span class="c-kw">let</span> input_device = profile.input_device;
+    <span class="c-mac">#[allow(unused)]</span>
     <span class="c-kw">let</span> output_device = profile.output_device;
     app.name = name.<span class="c-fn">clone</span>();
 
     <span class="c-kw">let</span> (cmd_tx, cmd_rx) = mpsc::unbounded_channel::&lt;<span class="c-ty">Command</span>&gt;();
     <span class="c-kw">let</span> (evt_tx, <span class="c-kw">mut</span> evt_rx) = mpsc::unbounded_channel::&lt;<span class="c-ty">AppEvent</span>&gt;();
+    <span class="c-mac">#[allow(unused)]</span>
     <span class="c-kw">let</span> muted_flag = <span class="c-ty">Arc</span>::<span class="c-fn">new</span>(<span class="c-ty">AtomicBool</span>::<span class="c-fn">new</span>(false));
 
     tokio::<span class="c-fn">spawn</span>(net::<span class="c-fn">run</span>(
@@ -1097,10 +1655,12 @@ libc = <span class="c-str">"0.2"</span></code></pre>
         cmd_rx,
         evt_tx,
         muted_flag.<span class="c-fn">clone</span>(),
+        my_node_id,
         name,
         input_device,
     ));
 
+    <span class="c-mac">#[cfg(feature = "audio")]</span>
     <span class="c-kw">let</span> <span class="c-kw">mut</span> playback = <span class="c-kw">match</span> playback::<span class="c-ty">Playback</span>::<span class="c-fn">new</span>(output_device.<span class="c-fn">as_deref</span>()) {
         <span class="c-ty">Ok</span>(p) =&gt; <span class="c-ty">Some</span>(p),
         <span class="c-ty">Err</span>(e) =&gt; {
@@ -1109,16 +1669,30 @@ libc = <span class="c-str">"0.2"</span></code></pre>
         }
     };
 
-    <span class="c-cm">// Track the last key event to deduplicate on Windows (where crossterm</span>
-    <span class="c-cm">// can emit two Press events for a single key: key-down + character).</span>
-    <span class="c-kw">let</span> <span class="c-kw">mut</span> last_key: <span class="c-ty">Option</span>&lt;(<span class="c-ty">KeyCode</span>, <span class="c-ty">Instant</span>)&gt; = <span class="c-ty">None</span>;
-
     <span class="c-kw">loop</span> {
         term.<span class="c-fn">draw</span>(|f| ui::<span class="c-fn">draw</span>(f, &amp;app))?;
 
         <span class="c-kw">while</span> <span class="c-kw">let</span> <span class="c-ty">Ok</span>(ev) = evt_rx.<span class="c-fn">try_recv</span>() {
             <span class="c-kw">match</span> ev {
-                <span class="c-ty">AppEvent</span>::<span class="c-ty">Message</span>(m) =&gt; app.messages.<span class="c-fn">push</span>(m),
+                <span class="c-ty">AppEvent</span>::<span class="c-ty">Message</span> { flock, msg } =&gt; {
+                    <span class="c-kw">let</span> is_current = app
+                        .flocks
+                        .<span class="c-fn">get</span>(app.current_flock)
+                        .<span class="c-fn">is_some_and</span>(|fv| fv.code == flock);
+                    <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Some</span>(fv) = app.flocks.<span class="c-fn">iter_mut</span>().<span class="c-fn">find</span>(|fv| fv.code == flock) {
+                        fv.messages.<span class="c-fn">push</span>(msg);
+                        <span class="c-kw">if</span> !is_current {
+                            fv.unread += <span class="c-num">1</span>;
+                        }
+                    }
+                }
+                <span class="c-ty">AppEvent</span>::<span class="c-ty">JoinedFlock</span> { code } =&gt; {
+                    app.flocks.<span class="c-fn">push</span>(<span class="c-ty">FlockView</span> {
+                        code,
+                        messages: <span class="c-mac">vec!</span>[],
+                        unread: <span class="c-num">0</span>,
+                    });
+                }
                 <span class="c-ty">AppEvent</span>::<span class="c-ty">PeerConnected</span>(id) =&gt; {
                     <span class="c-kw">if</span> !app.peers.<span class="c-fn">contains</span>(&amp;id) {
                         app.peers.<span class="c-fn">push</span>(id);
@@ -1127,6 +1701,7 @@ libc = <span class="c-str">"0.2"</span></code></pre>
                 <span class="c-ty">AppEvent</span>::<span class="c-ty">PeerDisconnected</span>(id) =&gt; {
                     app.peers.<span class="c-fn">retain</span>(|p| p != &amp;id);
                     app.peer_names.<span class="c-fn">remove</span>(&amp;id);
+                    app.peer_status.<span class="c-fn">remove</span>(&amp;id);
                     <span class="c-kw">if</span> !app.peers.<span class="c-fn">is_empty</span>() {
                         app.selected_peer %= app.peers.<span class="c-fn">len</span>();
                     } <span class="c-kw">else</span> {
@@ -1136,21 +1711,39 @@ libc = <span class="c-str">"0.2"</span></code></pre>
                 <span class="c-ty">AppEvent</span>::<span class="c-ty">PeerNamed</span>(id, name) =&gt; {
                     app.peer_names.<span class="c-fn">insert</span>(id, name);
                 }
-                <span class="c-ty">AppEvent</span>::<span class="c-ty">Ticket</span>(code) =&gt; {
-                    <span class="c-cm">// Our own room code (openers only; joiners already have</span>
-                    <span class="c-cm">// the opener's code set above).</span>
-                    <span class="c-kw">if</span> app.node_id.<span class="c-fn">is_none</span>() {
-                        app.node_id = <span class="c-ty">Some</span>(code);
-                    }
+                <span class="c-ty">AppEvent</span>::<span class="c-ty">PeerStatus</span>(id, s) =&gt; {
+                    app.peer_status.<span class="c-fn">insert</span>(id, s);
                 }
+                <span class="c-ty">AppEvent</span>::<span class="c-ty">Ticket</span>(code) =&gt; {
+                    <span class="c-cm">// Our own persistent invite code — stored for use when</span>
+                    <span class="c-cm">// the user creates a room (Ctrl+N).</span>
+                    app.node_id = <span class="c-ty">Some</span>(code);
+                }
+                <span class="c-mac">#[cfg(feature = "audio")]</span>
                 <span class="c-ty">AppEvent</span>::<span class="c-ty">VoiceFrame</span>(bytes) =&gt; {
                     <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Some</span>(p) = &amp;<span class="c-kw">mut</span> playback {
                         p.<span class="c-fn">push_opus</span>(&amp;bytes);
                     }
                 }
+                <span class="c-mac">#[cfg(not(feature = "audio"))]</span>
+                <span class="c-ty">AppEvent</span>::<span class="c-ty">VoiceFrame</span>(_) =&gt; {}
+                <span class="c-mac">#[cfg(feature = "video")]</span>
                 <span class="c-ty">AppEvent</span>::<span class="c-ty">VideoFrame</span>(jpeg) =&gt; {
                     <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Ok</span>(img) = image::<span class="c-fn">load_from_memory</span>(&amp;jpeg) {
                         app.video_frame = <span class="c-ty">Some</span>(img.<span class="c-fn">to_rgb8</span>());
+                    }
+                }
+                <span class="c-mac">#[cfg(not(feature = "video"))]</span>
+                <span class="c-ty">AppEvent</span>::<span class="c-ty">VideoFrame</span>(_) =&gt; {}
+                <span class="c-ty">AppEvent</span>::<span class="c-ty">HistoryChunk</span>(old) =&gt; {
+                    <span class="c-cm">// Prepend into the first flock, dedup by id.</span>
+                    <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Some</span>(fv) = app.flocks.<span class="c-fn">first_mut</span>() {
+                        <span class="c-kw">let</span> known: std::collections::<span class="c-ty">HashSet</span>&lt;_&gt; =
+                            fv.messages.<span class="c-fn">iter</span>().<span class="c-fn">map</span>(|m| m.id.<span class="c-fn">clone</span>()).<span class="c-fn">collect</span>();
+                        <span class="c-kw">let</span> <span class="c-kw">mut</span> fresh: <span class="c-ty">Vec</span>&lt;_&gt; =
+                            old.<span class="c-fn">into_iter</span>().<span class="c-fn">filter</span>(|m| !known.<span class="c-fn">contains</span>(&amp;m.id)).<span class="c-fn">collect</span>();
+                        fresh.<span class="c-fn">extend</span>(std::mem::<span class="c-fn">take</span>(&amp;<span class="c-kw">mut</span> fv.messages));
+                        fv.messages = fresh;
                     }
                 }
             }
@@ -1162,15 +1755,6 @@ libc = <span class="c-str">"0.2"</span></code></pre>
                     <span class="c-kw">continue</span>;
                 }
 
-                <span class="c-cm">// Deduplicate: skip if the same key code arrives within</span>
-                <span class="c-cm">// 30ms (Windows can emit two Press events per key press).</span>
-                <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Some</span>((prev_code, prev_time)) = &amp;last_key {
-                    <span class="c-kw">if</span> *prev_code == k.code &amp;&amp; prev_time.<span class="c-fn">elapsed</span>() &lt; <span class="c-ty">Duration</span>::<span class="c-fn">from_millis</span>(<span class="c-num">30</span>) {
-                        <span class="c-kw">continue</span>;
-                    }
-                }
-                last_key = <span class="c-ty">Some</span>((k.code, <span class="c-ty">Instant</span>::<span class="c-fn">now</span>()));
-
                 <span class="c-kw">if</span> app.show_invite {
                     <span class="c-kw">match</span> k.code {
                         <span class="c-ty">KeyCode</span>::<span class="c-ty">Char</span>(<span class="c-str">'i'</span>) | <span class="c-ty">KeyCode</span>::<span class="c-ty">Esc</span> =&gt; {
@@ -1181,16 +1765,80 @@ libc = <span class="c-str">"0.2"</span></code></pre>
                     <span class="c-kw">continue</span>;
                 }
 
+                <span class="c-kw">if</span> app.show_create_room {
+                    <span class="c-kw">match</span> k.code {
+                        <span class="c-ty">KeyCode</span>::<span class="c-ty">Enter</span> =&gt; {
+                            <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Some</span>(code) = &amp;app.node_id {
+                                <span class="c-kw">let</span> _ = cmd_tx.<span class="c-fn">send</span>(<span class="c-ty">Command</span>::<span class="c-ty">JoinFlock</span> { code: code.<span class="c-fn">clone</span>() });
+                            }
+                            app.show_create_room = false;
+                        }
+                        <span class="c-ty">KeyCode</span>::<span class="c-ty">Esc</span> =&gt; {
+                            app.show_create_room = false;
+                        }
+                        _ =&gt; {}
+                    }
+                    <span class="c-kw">continue</span>;
+                }
+
+                <span class="c-kw">if</span> app.show_join_room {
+                    <span class="c-kw">match</span> k.code {
+                        <span class="c-ty">KeyCode</span>::<span class="c-ty">Enter</span> <span class="c-kw">if</span> !app.join_input.<span class="c-fn">is_empty</span>() =&gt; {
+                            <span class="c-kw">let</span> code = std::mem::<span class="c-fn">take</span>(&amp;<span class="c-kw">mut</span> app.join_input);
+                            <span class="c-kw">let</span> _ = cmd_tx.<span class="c-fn">send</span>(<span class="c-ty">Command</span>::<span class="c-ty">JoinFlock</span> {
+                                code: code.<span class="c-fn">trim</span>().<span class="c-fn">into</span>(),
+                            });
+                            app.show_join_room = false;
+                        }
+                        <span class="c-ty">KeyCode</span>::<span class="c-ty">Char</span>(c) =&gt; app.join_input.<span class="c-fn">push</span>(c),
+                        <span class="c-ty">KeyCode</span>::<span class="c-ty">Backspace</span> =&gt; {
+                            app.join_input.<span class="c-fn">pop</span>();
+                        }
+                        <span class="c-ty">KeyCode</span>::<span class="c-ty">Esc</span> =&gt; {
+                            app.show_join_room = false;
+                        }
+                        _ =&gt; {}
+                    }
+                    <span class="c-kw">continue</span>;
+                }
+
                 <span class="c-kw">match</span> k.code {
                     <span class="c-ty">KeyCode</span>::<span class="c-ty">Enter</span> <span class="c-kw">if</span> !app.input.<span class="c-fn">is_empty</span>() =&gt; {
                         <span class="c-kw">let</span> text = std::mem::<span class="c-fn">take</span>(&amp;<span class="c-kw">mut</span> app.input);
-                        <span class="c-kw">let</span> _ = cmd_tx.<span class="c-fn">send</span>(<span class="c-ty">Command</span>::<span class="c-ty">SendText</span>(text));
+                        <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Some</span>(code) = text.<span class="c-fn">strip_prefix</span>(<span class="c-str">"/join "</span>) {
+                            <span class="c-kw">let</span> _ = cmd_tx.<span class="c-fn">send</span>(<span class="c-ty">Command</span>::<span class="c-ty">JoinFlock</span> {
+                                code: code.<span class="c-fn">trim</span>().<span class="c-fn">into</span>(),
+                            });
+                        } <span class="c-kw">else</span> <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Some</span>(fv) = app.<span class="c-fn">active</span>() {
+                            <span class="c-kw">let</span> _ = cmd_tx.<span class="c-fn">send</span>(<span class="c-ty">Command</span>::<span class="c-ty">SendText</span> {
+                                flock: fv.code.<span class="c-fn">clone</span>(),
+                                body: text,
+                            });
+                        }
+                    }
+
+                    <span class="c-ty">KeyCode</span>::<span class="c-ty">Up</span> <span class="c-kw">if</span> k.modifiers.<span class="c-fn">contains</span>(<span class="c-ty">KeyModifiers</span>::<span class="c-ty">ALT</span>) =&gt; {
+                        <span class="c-kw">let</span> max = app.flocks.<span class="c-fn">len</span>().<span class="c-fn">saturating_sub</span>(<span class="c-num">1</span>);
+                        app.current_flock = app.current_flock.<span class="c-fn">saturating_sub</span>(<span class="c-num">1</span>).<span class="c-fn">min</span>(max);
+                    }
+                    <span class="c-ty">KeyCode</span>::<span class="c-ty">Down</span> <span class="c-kw">if</span> k.modifiers.<span class="c-fn">contains</span>(<span class="c-ty">KeyModifiers</span>::<span class="c-ty">ALT</span>) =&gt; {
+                        app.current_flock =
+                            (app.current_flock + <span class="c-num">1</span>).<span class="c-fn">min</span>(app.flocks.<span class="c-fn">len</span>().<span class="c-fn">saturating_sub</span>(<span class="c-num">1</span>));
+                    }
+
+                    <span class="c-ty">KeyCode</span>::<span class="c-ty">Char</span>(<span class="c-str">'n'</span>) <span class="c-kw">if</span> k.modifiers.<span class="c-fn">contains</span>(<span class="c-ty">KeyModifiers</span>::<span class="c-ty">CONTROL</span>) =&gt; {
+                        app.show_create_room = true;
+                    }
+                    <span class="c-ty">KeyCode</span>::<span class="c-ty">Char</span>(<span class="c-str">'j'</span>) <span class="c-kw">if</span> k.modifiers.<span class="c-fn">contains</span>(<span class="c-ty">KeyModifiers</span>::<span class="c-ty">CONTROL</span>) =&gt; {
+                        app.join_input.<span class="c-fn">clear</span>();
+                        app.show_join_room = true;
                     }
 
                     <span class="c-ty">KeyCode</span>::<span class="c-ty">Char</span>(<span class="c-str">'i'</span>) =&gt; {
-                        app.show_invite = true;
+                        app.show_invite = app.flocks.<span class="c-fn">get</span>(app.current_flock).<span class="c-fn">is_some</span>();
                     }
 
+                    <span class="c-mac">#[cfg(feature = "audio")]</span>
                     <span class="c-ty">KeyCode</span>::<span class="c-ty">Char</span>(<span class="c-str">'k'</span>) <span class="c-kw">if</span> k.modifiers.<span class="c-fn">contains</span>(<span class="c-ty">KeyModifiers</span>::<span class="c-ty">CONTROL</span>) =&gt; {
                         <span class="c-kw">if</span> app.in_call {
                             <span class="c-kw">let</span> _ = cmd_tx.<span class="c-fn">send</span>(<span class="c-ty">Command</span>::<span class="c-ty">HangUp</span>);
@@ -1201,11 +1849,13 @@ libc = <span class="c-str">"0.2"</span></code></pre>
                         }
                     }
 
+                    <span class="c-mac">#[cfg(feature = "audio")]</span>
                     <span class="c-ty">KeyCode</span>::<span class="c-ty">Char</span>(<span class="c-str">'m'</span>) <span class="c-kw">if</span> k.modifiers.<span class="c-fn">contains</span>(<span class="c-ty">KeyModifiers</span>::<span class="c-ty">CONTROL</span>) =&gt; {
                         app.muted = !app.muted;
                         muted_flag.<span class="c-fn">store</span>(app.muted, <span class="c-ty">Ordering</span>::<span class="c-ty">Relaxed</span>);
                     }
 
+                    <span class="c-mac">#[cfg(feature = "video")]</span>
                     <span class="c-ty">KeyCode</span>::<span class="c-ty">Char</span>(<span class="c-str">'v'</span>) <span class="c-kw">if</span> k.modifiers.<span class="c-fn">contains</span>(<span class="c-ty">KeyModifiers</span>::<span class="c-ty">CONTROL</span>) =&gt; {
                         app.show_video = !app.show_video;
                         <span class="c-kw">match</span> (app.show_video, app.<span class="c-fn">selected_peer_addr</span>()) {
@@ -1366,19 +2016,26 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
 <span class="c-cm">//! handled by [`handle_incoming`]/[`recv_video`], invoked by the protocol</span>
 <span class="c-cm">//! handlers in [`crate::net`].</span>
 
+<span class="c-mac">#[cfg(any(feature = "audio", feature = "video"))]</span>
 <span class="c-kw">use</span> <span class="c-kw">crate</span>::event::<span class="c-ty">AppEvent</span>;
+<span class="c-mac">#[cfg(any(feature = "audio", feature = "video"))]</span>
 <span class="c-kw">use</span> iroh::{<span class="c-ty">Endpoint</span>, <span class="c-ty">EndpointAddr</span>, endpoint::<span class="c-ty">Connection</span>};
+<span class="c-mac">#[cfg(feature = "video")]</span>
 <span class="c-kw">use</span> tokio::io::{<span class="c-ty">AsyncReadExt</span>, <span class="c-ty">AsyncWriteExt</span>};
+<span class="c-mac">#[cfg(any(feature = "audio", feature = "video"))]</span>
 <span class="c-kw">use</span> tokio::sync::mpsc;
 
 <span class="c-cm">/// ALPN string for the voice protocol.</span>
+<span class="c-mac">#[cfg(feature = "audio")]</span>
 <span class="c-kw">pub</span> <span class="c-kw">const</span> <span class="c-ty">VOICE_ALPN</span>: &amp;[u8] = <span class="c-str">b"starling/voice/0"</span>;
 
 <span class="c-cm">/// ALPN string for the video protocol.</span>
+<span class="c-mac">#[cfg(feature = "video")]</span>
 <span class="c-kw">pub</span> <span class="c-kw">const</span> <span class="c-ty">VIDEO_ALPN</span>: &amp;[u8] = <span class="c-str">b"starling/video/0"</span>;
 
 <span class="c-cm">/// Place an outgoing voice call: connect to `peer` and stream mic frames as</span>
 <span class="c-cm">/// QUIC datagrams until the mic channel closes (hang-up).</span>
+<span class="c-mac">#[cfg(feature = "audio")]</span>
 <span class="c-kw">pub</span> <span class="c-kw">async</span> <span class="c-kw">fn</span> <span class="c-fn">place_call</span>(
     endpoint: <span class="c-ty">Endpoint</span>,
     peer: <span class="c-ty">EndpointAddr</span>,
@@ -1392,6 +2049,7 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
 }
 
 <span class="c-cm">/// Handle an incoming voice call: forward datagrams to the UI.</span>
+<span class="c-mac">#[cfg(feature = "audio")]</span>
 <span class="c-kw">pub</span> <span class="c-kw">async</span> <span class="c-kw">fn</span> <span class="c-fn">handle_incoming</span>(
     conn: <span class="c-ty">Connection</span>,
     evt_tx: mpsc::<span class="c-ty">UnboundedSender</span>&lt;<span class="c-ty">AppEvent</span>&gt;,
@@ -1405,6 +2063,7 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
 <span class="c-cm">/// Place an outgoing video call: connect to `peer` and stream JPEG frames</span>
 <span class="c-cm">/// over a unidirectional QUIC stream. Each frame is prefixed with a u32</span>
 <span class="c-cm">/// length (big-endian).</span>
+<span class="c-mac">#[cfg(feature = "video")]</span>
 <span class="c-kw">pub</span> <span class="c-kw">async</span> <span class="c-kw">fn</span> <span class="c-fn">place_video</span>(
     endpoint: <span class="c-ty">Endpoint</span>,
     peer: <span class="c-ty">EndpointAddr</span>,
@@ -1421,6 +2080,7 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
 
 <span class="c-cm">/// Handle an incoming video call: read JPEG frames from a unidirectional</span>
 <span class="c-cm">/// QUIC stream and forward them to the UI.</span>
+<span class="c-mac">#[cfg(feature = "video")]</span>
 <span class="c-kw">pub</span> <span class="c-kw">async</span> <span class="c-kw">fn</span> <span class="c-fn">recv_video</span>(
     conn: <span class="c-ty">Connection</span>,
     evt_tx: mpsc::<span class="c-ty">UnboundedSender</span>&lt;<span class="c-ty">AppEvent</span>&gt;,
@@ -1536,6 +2196,11 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
 <span class="c-kw">use</span> std::process::<span class="c-ty">Command</span>;
 
 <span class="c-kw">fn</span> <span class="c-fn">main</span>() {
+    <span class="c-cm">// Only download opus when the audio feature is enabled.</span>
+    <span class="c-kw">if</span> env::<span class="c-fn">var</span>(<span class="c-str">"CARGO_FEATURE_AUDIO"</span>).<span class="c-fn">is_err</span>() {
+        <span class="c-kw">return</span>;
+    }
+
     <span class="c-kw">let</span> out_dir = <span class="c-ty">PathBuf</span>::<span class="c-fn">from</span>(env::<span class="c-fn">var</span>(<span class="c-str">"OUT_DIR"</span>).<span class="c-fn">expect</span>(<span class="c-str">"OUT_DIR not set"</span>));
     <span class="c-kw">let</span> lib_dir = out_dir.<span class="c-fn">join</span>(<span class="c-str">"opus_lib"</span>);
     <span class="c-kw">let</span> bindings_path = out_dir.<span class="c-fn">join</span>(<span class="c-str">"opus_bindings.rs"</span>);
@@ -1869,8 +2534,8 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
 }
 
 <span class="c-kw">impl</span> <span class="c-ty">Profile</span> {
-    <span class="c-cm">/// Return the config directory for the current platform.</span>
-    <span class="c-kw">fn</span> <span class="c-fn">config_dir</span>() -&gt; <span class="c-ty">PathBuf</span> {
+    <span class="c-cm">/// Return the platform-appropriate config directory.</span>
+    <span class="c-kw">pub</span> <span class="c-kw">fn</span> <span class="c-fn">config_dir</span>() -&gt; <span class="c-ty">PathBuf</span> {
         <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Ok</span>(home) = std::env::<span class="c-fn">var</span>(<span class="c-str">"HOME"</span>) {
             <span class="c-ty">PathBuf</span>::<span class="c-fn">from</span>(home).<span class="c-fn">join</span>(<span class="c-str">".config"</span>).<span class="c-fn">join</span>(<span class="c-str">"starling"</span>)
         } <span class="c-kw">else</span> <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Ok</span>(appdata) = std::env::<span class="c-fn">var</span>(<span class="c-str">"APPDATA"</span>) {
@@ -1878,6 +2543,11 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
         } <span class="c-kw">else</span> {
             <span class="c-ty">PathBuf</span>::<span class="c-fn">from</span>(<span class="c-str">".starling"</span>)
         }
+    }
+
+    <span class="c-cm">/// Return the directory where roost data directories live.</span>
+    <span class="c-kw">pub</span> <span class="c-kw">fn</span> <span class="c-fn">roosts_dir</span>() -&gt; <span class="c-ty">PathBuf</span> {
+        <span class="c-ty">Self</span>::<span class="c-fn">config_dir</span>().<span class="c-fn">join</span>(<span class="c-str">"roosts"</span>)
     }
 
     <span class="c-cm">/// Path to the profile file on disk.</span>
@@ -1963,7 +2633,9 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
 <span class="c-cm">//! 7. Review summary, save, and show the profile code</span>
 
 <span class="c-kw">use</span> <span class="c-kw">crate</span>::config::<span class="c-ty">Profile</span>;
+<span class="c-mac">#[cfg(feature = "audio")]</span>
 <span class="c-kw">use</span> <span class="c-kw">crate</span>::util::suppress_stderr;
+<span class="c-mac">#[cfg(feature = "audio")]</span>
 <span class="c-kw">use</span> cpal::traits::<span class="c-ty">HostTrait</span>;
 <span class="c-kw">use</span> crossterm::event::{self <span class="c-kw">as</span> ct_event, <span class="c-ty">Event</span>, <span class="c-ty">KeyCode</span>, <span class="c-ty">KeyEventKind</span>};
 <span class="c-kw">use</span> crossterm::execute;
@@ -1972,7 +2644,6 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
     prelude::*,
     widgets::{<span class="c-ty">Block</span>, <span class="c-ty">Borders</span>, <span class="c-ty">Clear</span>, <span class="c-ty">List</span>, <span class="c-ty">ListItem</span>, <span class="c-ty">Paragraph</span>},
 };
-<span class="c-kw">use</span> std::time::{<span class="c-ty">Duration</span>, <span class="c-ty">Instant</span>};
 
 <span class="c-cm">/// Which step of the setup wizard we're on.</span>
 <span class="c-kw">enum</span> <span class="c-ty">Phase</span> {
@@ -2018,8 +2689,14 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
 
 <span class="c-kw">impl</span> <span class="c-ty">SetupApp</span> {
     <span class="c-kw">fn</span> <span class="c-fn">new</span>() -&gt; <span class="c-ty">Self</span> {
+        <span class="c-mac">#[cfg(feature = "audio")]</span>
         <span class="c-kw">let</span> input_devices = <span class="c-fn">suppress_stderr</span>(|| <span class="c-fn">list_devices</span>(true));
+        <span class="c-mac">#[cfg(not(feature = "audio"))]</span>
+        <span class="c-kw">let</span> input_devices = <span class="c-mac">vec!</span>[<span class="c-str">"System Default"</span>.<span class="c-fn">to_string</span>()];
+        <span class="c-mac">#[cfg(feature = "audio")]</span>
         <span class="c-kw">let</span> output_devices = <span class="c-fn">suppress_stderr</span>(|| <span class="c-fn">list_devices</span>(false));
+        <span class="c-mac">#[cfg(not(feature = "audio"))]</span>
+        <span class="c-kw">let</span> output_devices = <span class="c-mac">vec!</span>[<span class="c-str">"System Default"</span>.<span class="c-fn">to_string</span>()];
         <span class="c-kw">let</span> profile = <span class="c-ty">Profile</span>::<span class="c-fn">load</span>().<span class="c-fn">unwrap_or_default</span>();
 
         <span class="c-kw">let</span> missing_deps = <span class="c-fn">check_dependencies</span>();
@@ -2051,16 +2728,17 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
     }
 }
 
-<span class="c-cm">/// Check whether a command is available on PATH.</span>
+<span class="c-cm">/// Check whether a command is available on PATH (cross-platform).</span>
 <span class="c-kw">fn</span> <span class="c-fn">command_exists</span>(cmd: &amp;str) -&gt; bool {
-    std::process::<span class="c-ty">Command</span>::<span class="c-fn">new</span>(<span class="c-str">"sh"</span>)
-        .<span class="c-fn">args</span>([<span class="c-str">"-c"</span>, &amp;<span class="c-mac">format!</span>(<span class="c-str">"command -v {cmd}"</span>)])
+    std::process::<span class="c-ty">Command</span>::<span class="c-fn">new</span>(cmd)
+        .<span class="c-fn">arg</span>(<span class="c-str">"--version"</span>)
         .<span class="c-fn">output</span>()
         .<span class="c-fn">map</span>(|o| o.status.<span class="c-fn">success</span>())
         .<span class="c-fn">unwrap_or</span>(false)
 }
 
 <span class="c-cm">/// Check whether a pkg-config library is installed.</span>
+<span class="c-mac">#[allow(dead_code)]</span>
 <span class="c-kw">fn</span> <span class="c-fn">pkg_config_exists</span>(lib: &amp;str) -&gt; bool {
     std::process::<span class="c-ty">Command</span>::<span class="c-fn">new</span>(<span class="c-str">"pkg-config"</span>)
         .<span class="c-fn">args</span>([<span class="c-str">"--exists"</span>, lib])
@@ -2071,54 +2749,111 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
 
 <span class="c-cm">/// Return the list of system dependencies missing on the current platform.</span>
 <span class="c-kw">fn</span> <span class="c-fn">check_dependencies</span>() -&gt; <span class="c-ty">Vec</span>&lt;<span class="c-ty">String</span>&gt; {
-    <span class="c-kw">let</span> <span class="c-kw">mut</span> missing = <span class="c-ty">Vec</span>::<span class="c-fn">new</span>();
+    <span class="c-cm">// Windows has no external system dependencies — WASAPI and Media</span>
+    <span class="c-cm">// Foundation are built into the OS. The C compiler was already needed</span>
+    <span class="c-cm">// to build Starling, so no need to check for it here.</span>
+    <span class="c-mac">#[cfg(target_os = "windows")]</span>
+    <span class="c-kw">return</span> <span class="c-ty">Vec</span>::<span class="c-fn">new</span>();
 
-    <span class="c-kw">if</span> !<span class="c-fn">command_exists</span>(<span class="c-str">"cc"</span>) {
-        missing.<span class="c-fn">push</span>(<span class="c-str">"C compiler (gcc/cc)"</span>.<span class="c-fn">into</span>());
-    }
+    <span class="c-mac">#[cfg(not(target_os = "windows"))]</span>
+    {
+        <span class="c-kw">let</span> <span class="c-kw">mut</span> missing = <span class="c-ty">Vec</span>::<span class="c-fn">new</span>();
 
-    <span class="c-kw">if</span> <span class="c-mac">cfg!</span>(target_os = <span class="c-str">"linux"</span>) {
-        <span class="c-kw">if</span> !<span class="c-fn">command_exists</span>(<span class="c-str">"pkg-config"</span>) {
-            missing.<span class="c-fn">push</span>(<span class="c-str">"pkg-config"</span>.<span class="c-fn">into</span>());
+        <span class="c-kw">if</span> !<span class="c-fn">command_exists</span>(<span class="c-str">"cc"</span>) &amp;&amp; !<span class="c-fn">command_exists</span>(<span class="c-str">"gcc"</span>) {
+            missing.<span class="c-fn">push</span>(<span class="c-str">"C compiler (gcc/cc)"</span>.<span class="c-fn">into</span>());
         }
-        <span class="c-kw">if</span> !<span class="c-fn">pkg_config_exists</span>(<span class="c-str">"alsa"</span>) {
-            missing.<span class="c-fn">push</span>(<span class="c-str">"libasound2-dev (ALSA headers)"</span>.<span class="c-fn">into</span>());
-        }
-        <span class="c-kw">if</span> !<span class="c-fn">pkg_config_exists</span>(<span class="c-str">"libpulse"</span>) {
-            missing.<span class="c-fn">push</span>(<span class="c-str">"libpulse-dev (PulseAudio headers)"</span>.<span class="c-fn">into</span>());
-        }
-        <span class="c-cm">// nokhwa's V4L2 backend needs libclang for bindgen at build time</span>
-        <span class="c-kw">if</span> !<span class="c-fn">command_exists</span>(<span class="c-str">"libclang"</span>)
-            &amp;&amp; !std::path::<span class="c-ty">Path</span>::<span class="c-fn">new</span>(<span class="c-str">"/usr/lib/x86_64-linux-gnu/libclang.so"</span>).<span class="c-fn">exists</span>()
+
+        <span class="c-mac">#[cfg(target_os = "linux")]</span>
         {
-            missing.<span class="c-fn">push</span>(<span class="c-str">"libclang-dev (needed by nokhwa/V4L2 bindgen)"</span>.<span class="c-fn">into</span>());
+            <span class="c-kw">if</span> !<span class="c-fn">command_exists</span>(<span class="c-str">"pkg-config"</span>) {
+                missing.<span class="c-fn">push</span>(<span class="c-str">"pkg-config"</span>.<span class="c-fn">into</span>());
+            }
+            <span class="c-kw">if</span> !<span class="c-fn">pkg_config_exists</span>(<span class="c-str">"alsa"</span>) {
+                missing.<span class="c-fn">push</span>(<span class="c-str">"libasound2-dev (ALSA headers)"</span>.<span class="c-fn">into</span>());
+            }
+            <span class="c-kw">if</span> !<span class="c-fn">pkg_config_exists</span>(<span class="c-str">"libpulse"</span>) {
+                missing.<span class="c-fn">push</span>(<span class="c-str">"libpulse-dev (PulseAudio headers)"</span>.<span class="c-fn">into</span>());
+            }
+            <span class="c-kw">let</span> has_libclang = <span class="c-fn">command_exists</span>(<span class="c-str">"libclang"</span>)
+                || std::path::<span class="c-ty">Path</span>::<span class="c-fn">new</span>(<span class="c-str">"/usr/lib/x86_64-linux-gnu/libclang.so"</span>).<span class="c-fn">exists</span>()
+                || std::path::<span class="c-ty">Path</span>::<span class="c-fn">new</span>(<span class="c-str">"/usr/lib/aarch64-linux-gnu/libclang.so"</span>).<span class="c-fn">exists</span>()
+                || std::fs::<span class="c-fn">read_dir</span>(<span class="c-str">"/usr/lib/llvm-"</span>)
+                    .<span class="c-fn">map</span>(|<span class="c-kw">mut</span> d| {
+                        d.<span class="c-fn">any</span>(|e| {
+                            e.<span class="c-fn">ok</span>()
+                                .<span class="c-fn">map_or</span>(false, |f| f.<span class="c-fn">path</span>().<span class="c-fn">join</span>(<span class="c-str">"lib/libclang.so"</span>).<span class="c-fn">exists</span>())
+                        })
+                    })
+                    .<span class="c-fn">unwrap_or</span>(false)
+                || std::fs::<span class="c-fn">read_dir</span>(<span class="c-str">"/usr/lib"</span>)
+                    .<span class="c-fn">map</span>(|<span class="c-kw">mut</span> d| {
+                        d.<span class="c-fn">any</span>(|e| {
+                            e.<span class="c-fn">ok</span>().<span class="c-fn">map_or</span>(false, |f| {
+                                f.<span class="c-fn">file_name</span>().<span class="c-fn">to_string_lossy</span>().<span class="c-fn">starts_with</span>(<span class="c-str">"libclang.so"</span>)
+                            })
+                        })
+                    })
+                    .<span class="c-fn">unwrap_or</span>(false);
+            <span class="c-kw">if</span> !has_libclang {
+                missing.<span class="c-fn">push</span>(<span class="c-str">"libclang-dev (needed by nokhwa/V4L2 bindgen)"</span>.<span class="c-fn">into</span>());
+            }
+            <span class="c-kw">if</span> !<span class="c-fn">pkg_config_exists</span>(<span class="c-str">"libv4l2"</span>) &amp;&amp; !<span class="c-fn">pkg_config_exists</span>(<span class="c-str">"v4l-utils"</span>) {
+                missing.<span class="c-fn">push</span>(<span class="c-str">"libv4l-dev (needed by nokhwa/V4L2)"</span>.<span class="c-fn">into</span>());
+            }
+            <span class="c-kw">if</span> std::path::<span class="c-ty">Path</span>::<span class="c-fn">new</span>(<span class="c-str">"/mnt/wslg"</span>).<span class="c-fn">exists</span>()
+                &amp;&amp; !std::path::<span class="c-ty">Path</span>::<span class="c-fn">new</span>(<span class="c-str">"/etc/asound.conf"</span>).<span class="c-fn">exists</span>()
+            {
+                missing.<span class="c-fn">push</span>(<span class="c-str">"libasound2-plugins + /etc/asound.conf (WSL2 audio bridge)"</span>.<span class="c-fn">into</span>());
+            }
+            <span class="c-kw">if</span> std::path::<span class="c-ty">Path</span>::<span class="c-fn">new</span>(<span class="c-str">"/mnt/wslg"</span>).<span class="c-fn">exists</span>()
+                &amp;&amp; !std::fs::<span class="c-fn">read_dir</span>(<span class="c-str">"/dev"</span>)
+                    .<span class="c-fn">map</span>(|<span class="c-kw">mut</span> d| {
+                        d.<span class="c-fn">any</span>(|e| {
+                            e.<span class="c-fn">ok</span>().<span class="c-fn">map_or</span>(false, |f| {
+                                f.<span class="c-fn">file_name</span>().<span class="c-fn">to_string_lossy</span>().<span class="c-fn">starts_with</span>(<span class="c-str">"video"</span>)
+                            })
+                        })
+                    })
+                    .<span class="c-fn">unwrap_or</span>(false)
+            {
+                missing.<span class="c-fn">push</span>(
+                    <span class="c-str">"webcam (WSL2): install usbipd-win on Windows, then attach camera"</span>.<span class="c-fn">into</span>(),
+                );
+            }
         }
-        <span class="c-cm">// WSL2 needs the ALSA-&gt;PulseAudio bridge for audio to work</span>
-        <span class="c-kw">if</span> std::path::<span class="c-ty">Path</span>::<span class="c-fn">new</span>(<span class="c-str">"/mnt/wslg"</span>).<span class="c-fn">exists</span>()
-            &amp;&amp; !std::path::<span class="c-ty">Path</span>::<span class="c-fn">new</span>(<span class="c-str">"/etc/asound.conf"</span>).<span class="c-fn">exists</span>()
-        {
-            missing.<span class="c-fn">push</span>(<span class="c-str">"libasound2-plugins + /etc/asound.conf (WSL2 audio bridge)"</span>.<span class="c-fn">into</span>());
-        }
-    }
 
-    missing
+        missing
+    }
 }
 
 <span class="c-cm">/// Build the install command for the detected package manager, if any.</span>
 <span class="c-kw">fn</span> <span class="c-fn">install_command</span>() -&gt; <span class="c-ty">Option</span>&lt;<span class="c-ty">String</span>&gt; {
+    <span class="c-cm">// Windows package managers</span>
+    <span class="c-mac">#[cfg(target_os = "windows")]</span>
+    {
+        <span class="c-kw">if</span> <span class="c-fn">command_exists</span>(<span class="c-str">"winget"</span>) {
+            <span class="c-kw">return</span> <span class="c-ty">Some</span>(
+                <span class="c-str">"winget install Microsoft.VisualStudio.2022.BuildTools --includeRecommended"</span>.<span class="c-fn">into</span>(),
+            );
+        }
+        <span class="c-kw">if</span> <span class="c-fn">command_exists</span>(<span class="c-str">"choco"</span>) {
+            <span class="c-kw">return</span> <span class="c-ty">Some</span>(<span class="c-str">"choco install visualstudio2022buildtools"</span>.<span class="c-fn">into</span>());
+        }
+    }
+
     <span class="c-cm">// Check if we're on WSL2 and need the audio bridge</span>
     <span class="c-kw">let</span> needs_wsl_audio = std::path::<span class="c-ty">Path</span>::<span class="c-fn">new</span>(<span class="c-str">"/mnt/wslg"</span>).<span class="c-fn">exists</span>()
         &amp;&amp; !std::path::<span class="c-ty">Path</span>::<span class="c-fn">new</span>(<span class="c-str">"/etc/asound.conf"</span>).<span class="c-fn">exists</span>();
 
     <span class="c-kw">let</span> wsl_audio_suffix = <span class="c-kw">if</span> needs_wsl_audio {
-        <span class="c-str">" &amp;&amp; sudo apt-get install -y libasound2-plugins &amp;&amp; echo 'pcm.!default pulse' | sudo tee /etc/asound.conf &gt; /dev/null &amp;&amp; echo 'ctl.!default pulse' | sudo tee -a /etc/asound.conf &gt; /dev/null"</span>
+        <span class="c-str">" &amp;&amp; sudo apt-get install -y libasound2-plugins &amp;&amp; printf 'pcm.!default {\\n    type pulse\\n}\\nctl.!default {\\n    type pulse\\n}\\n' | sudo tee /etc/asound.conf &gt; /dev/null"</span>
     } <span class="c-kw">else</span> {
         <span class="c-str">""</span>
     };
 
     <span class="c-kw">if</span> <span class="c-fn">command_exists</span>(<span class="c-str">"apt-get"</span>) {
         <span class="c-ty">Some</span>(<span class="c-mac">format!</span>(
-            <span class="c-str">"sudo apt-get update &amp;&amp; sudo apt-get install -y build-essential pkg-config libasound2-dev libpulse-dev libclang-dev{}"</span>,
+            <span class="c-str">"sudo apt-get update &amp;&amp; sudo apt-get install -y build-essential pkg-config libasound2-dev libpulse-dev libclang-dev libv4l-dev{}"</span>,
             wsl_audio_suffix
         ))
     } <span class="c-kw">else</span> <span class="c-kw">if</span> <span class="c-fn">command_exists</span>(<span class="c-str">"dnf"</span>) {
@@ -2164,7 +2899,40 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
     success
 }
 
+<span class="c-cm">/// Build the `cargo install` command to rebuild with all features.</span>
+<span class="c-kw">fn</span> <span class="c-fn">rebuild_command</span>() -&gt; <span class="c-ty">String</span> {
+    <span class="c-cm">// Detect if we were installed from a git source.</span>
+    <span class="c-kw">let</span> git_dir = std::path::<span class="c-ty">PathBuf</span>::<span class="c-fn">from</span>(std::env::<span class="c-fn">var</span>(<span class="c-str">"HOME"</span>).<span class="c-fn">unwrap_or_else</span>(|_| <span class="c-str">"."</span>.<span class="c-fn">into</span>()))
+        .<span class="c-fn">join</span>(<span class="c-str">".cargo/git/db"</span>);
+
+    <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Ok</span>(entries) = std::fs::<span class="c-fn">read_dir</span>(&amp;git_dir) {
+        <span class="c-kw">for</span> entry <span class="c-kw">in</span> entries.<span class="c-fn">flatten</span>() {
+            <span class="c-kw">let</span> name = entry.<span class="c-fn">file_name</span>().<span class="c-fn">to_string_lossy</span>().<span class="c-fn">to_string</span>();
+            <span class="c-kw">if</span> name.<span class="c-fn">starts_with</span>(<span class="c-str">"starling"</span>) {
+                <span class="c-cm">// Extract the git URL from the bare repo.</span>
+                <span class="c-kw">let</span> output = std::process::<span class="c-ty">Command</span>::<span class="c-fn">new</span>(<span class="c-str">"git"</span>)
+                    .<span class="c-fn">args</span>([<span class="c-str">"config"</span>, <span class="c-str">"--get"</span>, <span class="c-str">"remote.origin.url"</span>])
+                    .<span class="c-fn">current_dir</span>(entry.<span class="c-fn">path</span>())
+                    .<span class="c-fn">output</span>();
+                <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Ok</span>(out) = output {
+                    <span class="c-kw">let</span> url = <span class="c-ty">String</span>::<span class="c-fn">from_utf8_lossy</span>(&amp;out.stdout).<span class="c-fn">trim</span>().<span class="c-fn">to_string</span>();
+                    <span class="c-kw">if</span> !url.<span class="c-fn">is_empty</span>() {
+                        <span class="c-kw">return</span> <span class="c-mac">format!</span>(
+                            <span class="c-str">"cargo install --git {} --features audio,video --force"</span>,
+                            url
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    <span class="c-cm">// Fallback: try crates.io</span>
+    <span class="c-str">"cargo install Starling-TUI --features audio,video --force"</span>.<span class="c-fn">into</span>()
+}
+
 <span class="c-cm">/// Enumerate audio devices (input or output), prefixed with "System Default".</span>
+<span class="c-mac">#[cfg(feature = "audio")]</span>
 <span class="c-kw">fn</span> <span class="c-fn">list_devices</span>(is_input: bool) -&gt; <span class="c-ty">Vec</span>&lt;<span class="c-ty">String</span>&gt; {
     <span class="c-kw">let</span> host = cpal::<span class="c-fn">default_host</span>();
     <span class="c-cm">// Collect into a Vec so the input and output iterator types unify.</span>
@@ -2192,7 +2960,6 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
     term: &amp;<span class="c-kw">mut</span> ratatui::<span class="c-ty">Terminal</span>&lt;ratatui::backend::<span class="c-ty">CrosstermBackend</span>&lt;std::io::<span class="c-ty">Stdout</span>&gt;&gt;,
 ) -&gt; anyhow::<span class="c-ty">Result</span>&lt;<span class="c-ty">Option</span>&lt;<span class="c-ty">Profile</span>&gt;&gt; {
     <span class="c-kw">let</span> <span class="c-kw">mut</span> app = <span class="c-ty">SetupApp</span>::<span class="c-fn">new</span>();
-    <span class="c-kw">let</span> <span class="c-kw">mut</span> last_key: <span class="c-ty">Option</span>&lt;(<span class="c-ty">KeyCode</span>, <span class="c-ty">Instant</span>)&gt; = <span class="c-ty">None</span>;
 
     <span class="c-kw">loop</span> {
         term.<span class="c-fn">draw</span>(|f| <span class="c-fn">draw</span>(f, &amp;app))?;
@@ -2204,12 +2971,6 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
             <span class="c-kw">if</span> k.kind != <span class="c-ty">KeyEventKind</span>::<span class="c-ty">Press</span> {
                 <span class="c-kw">continue</span>;
             }
-            <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Some</span>((p, t)) = last_key {
-                <span class="c-kw">if</span> p == k.code &amp;&amp; t.<span class="c-fn">elapsed</span>() &lt; <span class="c-ty">Duration</span>::<span class="c-fn">from_millis</span>(<span class="c-num">30</span>) {
-                    <span class="c-kw">continue</span>;
-                }
-            }
-            last_key = <span class="c-ty">Some</span>((k.code, <span class="c-ty">Instant</span>::<span class="c-fn">now</span>()));
             <span class="c-kw">match</span> app.phase {
                 <span class="c-ty">Phase</span>::<span class="c-ty">DependencyCheck</span> =&gt; <span class="c-kw">match</span> k.code {
                     <span class="c-ty">KeyCode</span>::<span class="c-ty">Enter</span> =&gt; {
@@ -2217,7 +2978,18 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
                             <span class="c-kw">let</span> success = <span class="c-fn">run_shell_command</span>(term, cmd);
                             <span class="c-kw">if</span> success {
                                 app.missing_deps.<span class="c-fn">clear</span>();
-                                app.install_status = <span class="c-str">"Dependencies installed successfully."</span>.<span class="c-fn">into</span>();
+                                app.install_status = <span class="c-str">"Dependencies installed. Rebuilding..."</span>.<span class="c-fn">into</span>();
+                                term.<span class="c-fn">draw</span>(|f| <span class="c-fn">draw</span>(f, &amp;app))?;
+
+                                <span class="c-cm">// Rebuild with all features enabled.</span>
+                                <span class="c-kw">let</span> rebuild = <span class="c-fn">run_shell_command</span>(term, &amp;<span class="c-fn">rebuild_command</span>());
+                                <span class="c-kw">if</span> rebuild {
+                                    app.install_status =
+                                        <span class="c-str">"Installed! Restart starling to use audio/video."</span>.<span class="c-fn">into</span>();
+                                } <span class="c-kw">else</span> {
+                                    app.install_status =
+                                        <span class="c-str">"Deps installed but rebuild failed. Run: cargo install Starling-TUI --features audio,video --force"</span>.<span class="c-fn">into</span>();
+                                }
                             } <span class="c-kw">else</span> {
                                 app.install_status =
                                     <span class="c-str">"Installation failed. See output above."</span>.<span class="c-fn">into</span>();
@@ -2391,10 +3163,36 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
     } <span class="c-kw">else</span> {
         lines.<span class="c-fn">push</span>(<span class="c-ty">Line</span>::<span class="c-fn">raw</span>(<span class="c-str">"  Missing:"</span>));
         <span class="c-kw">for</span> dep <span class="c-kw">in</span> &amp;app.missing_deps {
-            lines.<span class="c-fn">push</span>(<span class="c-ty">Line</span>::<span class="c-fn">styled</span>(
-                <span class="c-mac">format!</span>(<span class="c-str">"    x {}"</span>, dep),
-                <span class="c-ty">Style</span>::<span class="c-fn">new</span>().<span class="c-fn">fg</span>(<span class="c-ty">Color</span>::<span class="c-ty">Red</span>),
-            ));
+            <span class="c-kw">if</span> dep.<span class="c-fn">contains</span>(<span class="c-str">"webcam"</span>) &amp;&amp; dep.<span class="c-fn">contains</span>(<span class="c-str">"WSL2"</span>) {
+                lines.<span class="c-fn">push</span>(<span class="c-ty">Line</span>::<span class="c-fn">styled</span>(
+                    <span class="c-mac">format!</span>(<span class="c-str">"    ! {}"</span>, dep),
+                    <span class="c-ty">Style</span>::<span class="c-fn">new</span>().<span class="c-fn">fg</span>(<span class="c-ty">Color</span>::<span class="c-ty">Yellow</span>),
+                ));
+                lines.<span class="c-fn">push</span>(<span class="c-ty">Line</span>::<span class="c-fn">raw</span>(<span class="c-str">""</span>));
+                lines.<span class="c-fn">push</span>(<span class="c-ty">Line</span>::<span class="c-fn">raw</span>(
+                    <span class="c-str">"  WSL2 webcam setup (run in Windows PowerShell as Admin):"</span>,
+                ));
+                lines.<span class="c-fn">push</span>(<span class="c-ty">Line</span>::<span class="c-fn">raw</span>(<span class="c-str">"    1. winget install usbipd"</span>));
+                lines.<span class="c-fn">push</span>(<span class="c-ty">Line</span>::<span class="c-fn">raw</span>(
+                    <span class="c-str">"    2. usbipd list              # find your camera"</span>,
+                ));
+                lines.<span class="c-fn">push</span>(<span class="c-ty">Line</span>::<span class="c-fn">raw</span>(<span class="c-str">"    3. usbipd bind --busid &lt;X&gt;  # share it"</span>));
+                lines.<span class="c-fn">push</span>(<span class="c-ty">Line</span>::<span class="c-fn">raw</span>(<span class="c-str">"    4. usbipd attach --wsl --busid &lt;X&gt;"</span>));
+                lines.<span class="c-fn">push</span>(<span class="c-ty">Line</span>::<span class="c-fn">raw</span>(<span class="c-str">""</span>));
+                lines.<span class="c-fn">push</span>(<span class="c-ty">Line</span>::<span class="c-fn">raw</span>(<span class="c-str">"  Then in WSL2:"</span>));
+                lines.<span class="c-fn">push</span>(<span class="c-ty">Line</span>::<span class="c-fn">raw</span>(
+                    <span class="c-str">"    5. sudo apt install linux-tools-generic usbip hwdata"</span>,
+                ));
+                lines.<span class="c-fn">push</span>(<span class="c-ty">Line</span>::<span class="c-fn">raw</span>(<span class="c-str">"    6. sudo update-usbids"</span>));
+                lines.<span class="c-fn">push</span>(<span class="c-ty">Line</span>::<span class="c-fn">raw</span>(
+                    <span class="c-str">"    7. ls /dev/video*           # should show your camera"</span>,
+                ));
+            } <span class="c-kw">else</span> {
+                lines.<span class="c-fn">push</span>(<span class="c-ty">Line</span>::<span class="c-fn">styled</span>(
+                    <span class="c-mac">format!</span>(<span class="c-str">"    x {}"</span>, dep),
+                    <span class="c-ty">Style</span>::<span class="c-fn">new</span>().<span class="c-fn">fg</span>(<span class="c-ty">Color</span>::<span class="c-ty">Red</span>),
+                ));
+            }
         }
         lines.<span class="c-fn">push</span>(<span class="c-ty">Line</span>::<span class="c-fn">raw</span>(<span class="c-str">""</span>));
         <span class="c-kw">if</span> <span class="c-kw">let</span> <span class="c-ty">Some</span>(cmd) = &amp;app.install_cmd {
@@ -2576,17 +3374,22 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
   <p class="filename">src/video.rs — complete</p>
 <pre><code><span class="c-cm">//! Webcam capture and half-block terminal rendering.</span>
 
-<span class="c-kw">use</span> image::{<span class="c-ty">DynamicImage</span>, <span class="c-ty">ImageFormat</span>, <span class="c-ty">RgbImage</span>, imageops::<span class="c-ty">FilterType</span>};
+<span class="c-mac">#[cfg(feature = "video")]</span>
+<span class="c-kw">use</span> image::{<span class="c-ty">DynamicImage</span>, <span class="c-ty">ImageFormat</span>};
+<span class="c-kw">use</span> image::{<span class="c-ty">RgbImage</span>, imageops::<span class="c-ty">FilterType</span>};
+<span class="c-mac">#[cfg(feature = "video")]</span>
 <span class="c-kw">use</span> nokhwa::{
     <span class="c-ty">Camera</span>,
     pixel_format::<span class="c-ty">RgbFormat</span>,
     utils::{<span class="c-ty">CameraIndex</span>, <span class="c-ty">RequestedFormat</span>, <span class="c-ty">RequestedFormatType</span>},
 };
 <span class="c-kw">use</span> ratatui::prelude::*;
+<span class="c-mac">#[cfg(feature = "video")]</span>
 <span class="c-kw">use</span> tokio::sync::mpsc;
 
 <span class="c-cm">/// Convert an RGB image to terminal lines using half-block characters:</span>
 <span class="c-cm">/// each cell represents two vertical pixels (top = fg, bottom = bg).</span>
+<span class="c-mac">#[allow(dead_code)]</span>
 <span class="c-kw">pub</span> <span class="c-kw">fn</span> <span class="c-fn">frame_to_lines</span>(img: &amp;<span class="c-ty">RgbImage</span>, cols: u16, rows: u16) -&gt; <span class="c-ty">Vec</span>&lt;<span class="c-ty">Line</span>&lt;'<span class="c-kw">static</span>&gt;&gt; {
     <span class="c-kw">let</span> small = image::imageops::<span class="c-fn">resize</span>(img, cols <span class="c-kw">as</span> u32, (rows * <span class="c-num">2</span>) <span class="c-kw">as</span> u32, <span class="c-ty">FilterType</span>::<span class="c-ty">Triangle</span>);
     (<span class="c-num">0</span>..rows)
@@ -2612,6 +3415,7 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
 <span class="c-cm">/// Start the webcam on a background thread, sending JPEG frames to `tx`.</span>
 <span class="c-cm">/// Returns the thread handle so the caller can stop it by dropping the</span>
 <span class="c-cm">/// channel (which causes `tx.send` to fail and the thread to exit).</span>
+<span class="c-mac">#[cfg(feature = "video")]</span>
 <span class="c-kw">pub</span> <span class="c-kw">fn</span> <span class="c-fn">start_camera</span>(
     tx: mpsc::<span class="c-ty">UnboundedSender</span>&lt;<span class="c-ty">Vec</span>&lt;u8&gt;&gt;,
 ) -&gt; anyhow::<span class="c-ty">Result</span>&lt;std::thread::<span class="c-ty">JoinHandle</span>&lt;()&gt;&gt; {
@@ -2656,10 +3460,10 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
 <div class="divider">§</div>
 
 <section id="p5">
-  <span class="phase-tag">Phase 5</span>
+  <span class="phase-tag shipped">Phase 5 · Shipped</span>
   <div class="kicker">Who's actually here</div>
   <h2>Presence &amp; history</h2>
-  <p class="lead">Goal: presence beyond names — status you can see at a glance — plus recent history for latecomers. (Names in the birds panel shipped in Phase 3; stable identity shipped too, see below.)</p>
+  <p class="lead">Presence beyond names, plus recent history for latecomers — all shipped. Stable identity persists (<code class="inl">config.rs</code>), presence rides <code class="inl">GossipPayload</code>, and history backfill is a real module, <code class="inl">sync.rs</code> (shown complete in Phase 0's module map, embedded below). This section walks the design; the code is the real thing.</p>
 
   <h3>1 · Stable identity — already shipped</h3>
   <p>This section used to be the roadmap's first item, and it landed while the guide was being written: <code class="inl">Profile::load_or_create_secret()</code> persists the key at <code class="inl">identity.key</code> (visible in Phase 3's <code class="inl">config.rs</code> listing), and <code class="inl">net::run</code> binds with <code class="inl">Endpoint::builder(presets::N0).secret_key(secret)</code> (Phase 1's <code class="inl">net.rs</code> listing). Same bird, same node ID, same room code, every launch — and a signable identity ready for Phase 9. Nothing left to build here.</p>
@@ -2850,11 +3654,11 @@ starling join BIRD-00CCFF-8A2BE2-...</code></pre>
 <div class="divider">§</div>
 
 <section id="p6">
-  <span class="phase-tag">Phase 6</span>
+  <span class="phase-tag shipped">Phase 6 · Shipped</span>
   <div class="kicker">More than one conversation</div>
   <h2>Many flocks at once</h2>
-  <p class="lead">Goal: be in several flocks simultaneously — a rail of flocks on the left, <code class="inl">Alt+↑/↓</code> to switch, each with its own topic, key, and scrollback.</p>
-  <p>Everything a flock needs already derives from one room code. So "many flocks" is a map keyed by room code, holding what today are singletons. This phase reshapes two <code class="inl">Command</code>/<code class="inl">AppEvent</code> variants, so it touches all four core files — each block below is complete and anchored.</p>
+  <p class="lead">Shipped: you're in several flocks at once — a rail on the left, <code class="inl">Alt+↑/↓</code> to switch, each with its own topic, key, and scrollback. It landed almost exactly as this section planned it.</p>
+  <p>Everything a flock needs derives from one room code, so "many flocks" is a map keyed by room code (<code class="inl">HashMap&lt;String, FlockHandle&gt;</code> in the real <code class="inl">net.rs</code> above). The design below shows how the two <code class="inl">Command</code>/<code class="inl">AppEvent</code> variants got reshaped to be flock-scoped — matching the shipped <code class="inl">event.rs</code> / <code class="inl">net.rs</code> / <code class="inl">ui.rs</code> / <code class="inl">main.rs</code> listings.</p>
   <p class="filename">src/event.rs — the reshaped variants (BEFORE → AFTER)</p>
 <pre><code><span class="c-cm">// BEFORE (current):                    // AFTER (flock-scoped):</span>
 <span class="c-kw">pub enum</span> <span class="c-ty">Command</span> {
@@ -3029,11 +3833,12 @@ f.render_widget(<span class="c-ty">List</span>::new(rail)
 <div class="divider">§</div>
 
 <section id="p7">
-  <span class="phase-tag">Phase 7</span>
+  <span class="phase-tag">Phase 7 · In progress</span>
   <div class="kicker">A place to come back to</div>
   <h2>Roosts: servers &amp; channels</h2>
   <p class="lead">Goal: a community whose history, channels, and membership survive everyone going offline — because one bird, the roost, stays.</p>
-  <p>A roost is <strong>the same binary in <code class="inl">--roost</code> mode</strong>: a bird that stays online, persists everything to disk, and is authoritative for its community. A community is a set of channels; each channel is just a flock topic derived from the roost's ID plus the channel name — all the Phase 1–6 machinery reused.</p>
+  <div class="callout"><span class="lbl">Already real — the roost subcommands</span>The roost isn't a TUI mode; the <code class="inl">starling roost …</code> subcommands are implemented by the separate <strong>Starling-Server</strong> crate. Their lifecycle already works: <code class="inl">roost create / open / destroy / invite / status / doctor / logs</code>, backed by a sled store. What's below is the design; the <strong>membership gating</strong> (invited birds only) is the part still landing, alongside Phase 8. The TUI side is just joining — a roost's channels arrive over its control topic and render in the flock rail.</div>
+  <p>A roost is a bird that stays online, persists everything to disk, and is authoritative for its community. A community is a set of channels; each channel is just a flock topic derived from the roost's ID plus the channel name — all the Phase 1–6 machinery reused.</p>
 <pre><code><span class="c-cm">roost node ID ──► community code (same BIRDxxxxxx scheme)</span>
 <span class="c-cm">                   ├── channel "#general"  = topic_for("starling/roost/{code}/general")</span>
 <span class="c-cm">                   ├── channel "#builds"   = topic_for("starling/roost/{code}/builds")</span>
@@ -3190,7 +3995,7 @@ f.render_widget(<span class="c-ty">List</span>::new(rail)
     <tr><td>Who runs it</td><td>Nobody</td><td>A community member</td></tr>
     <tr><td>Who can join</td><td>Anyone holding the invite code — the code <em>is</em> membership</td><td>Only birds whose identity has been granted membership (Phase 8)</td></tr>
   </table>
-  <div class="callout"><span class="lbl">Run your own</span><code class="inl">starling roost --data ./forge.db --name "The Forge"</code>. No port forwarding, no public IP — iroh's relay + hole-punching means a roost on a laptop behind hotel Wi-Fi still serves its community. One command, one file, genuinely theirs.</div>
+  <div class="callout"><span class="lbl">Run your own (works today)</span><code class="inl">starling roost create the-forge</code> then <code class="inl">starling roost open the-forge</code>. No port forwarding, no public IP — iroh's relay + hole-punching means a roost on a laptop behind hotel Wi-Fi still serves its community. Data lives under <code class="inl">~/.config/starling/roosts/the-forge/</code>; backing it up is copying that folder, and that responsibility is the point.</div>
   <p class="dim"><span class="check">✓ Checkpoint:</span> channels, durable history, offline-and-back backfill — the shape of Discord, owned by a person you know.</p>
 </section>
 
@@ -3675,17 +4480,52 @@ peer_items.push(<span class="c-ty">ListItem</span>::new(<span class="c-ty">Span<
 
 <div class="divider">✦</div>
 
+<section id="cli">
+  <div class="kicker">Reference</div>
+  <h2>The command line</h2>
+  <p>One command surface: <code class="inl">starling</code>. The client subcommands come from Starling-TUI; the roost subcommands from Starling-Server. ✅ works today, 📋 is planned.</p>
+
+  <h3>Client</h3>
+  <table class="spec">
+    <tr><th>Command</th><th></th><th>Does</th></tr>
+    <tr><td><code>starling open</code></td><td>✅</td><td>Launch the TUI (bare <code>starling</code> is the same)</td></tr>
+    <tr><td><code>starling join &lt;code&gt;</code></td><td>✅</td><td>Launch joined to a flock or roost by invite code</td></tr>
+    <tr><td><code>starling setup</code></td><td>✅</td><td>Profile + audio + dependency wizard</td></tr>
+    <tr><td><code>starling leave &lt;code&gt;</code></td><td>✅</td><td>Print how to leave (in-app, just close with <code>Esc</code>)</td></tr>
+    <tr><td><code>starling list</code></td><td>✅</td><td>List roosts stored on disk</td></tr>
+    <tr><td><code>starling doctor</code></td><td>✅</td><td>Diagnose config, identity, profile, dependencies</td></tr>
+    <tr><td><code>starling logs</code></td><td>✅</td><td>Print the log file location</td></tr>
+    <tr><td><code>starling tui version|update|uninstall</code></td><td>✅</td><td>Self-management</td></tr>
+    <tr><td><code>starling help</code></td><td>✅</td><td>Print usage</td></tr>
+  </table>
+  <p class="dim">Inside the running app, joining more flocks (<code class="inl">/join</code>), switching (<code class="inl">Alt+↑/↓</code>), calls (<code class="inl">Ctrl+K</code>), mute (<code class="inl">Ctrl+M</code>), video (<code class="inl">Ctrl+V</code>), peer cycle (<code class="inl">Tab</code>), and the invite popup (<code class="inl">i</code>) are keybindings.</p>
+
+  <h3>Roost server</h3>
+  <table class="spec">
+    <tr><th>Command</th><th></th><th>Does</th></tr>
+    <tr><td><code>starling roost create &lt;name&gt;</code></td><td>✅</td><td>Create a roost: identity key + sled database, prints the invite code</td></tr>
+    <tr><td><code>starling roost open &lt;name&gt;</code></td><td>✅</td><td>Start the roost (blocks until Ctrl+C); persists + serves history</td></tr>
+    <tr><td><code>starling roost destroy &lt;name&gt;</code></td><td>✅</td><td>Delete a roost and all its data</td></tr>
+    <tr><td><code>starling roost invite|status|doctor|logs &lt;name&gt;</code></td><td>✅</td><td>Inspect / diagnose a roost</td></tr>
+    <tr><td><code>starling roost members &lt;name&gt;</code></td><td>📋</td><td>List members — arrives with roles (Phase 8)</td></tr>
+    <tr><td><code>starling roost channel add|remove &lt;name&gt; &lt;ch&gt;</code></td><td>📋</td><td>Channel management — arrives with roles (Phase 8)</td></tr>
+    <tr><td><code>starling server version|update|uninstall</code></td><td>✅</td><td>Server self-management</td></tr>
+  </table>
+</section>
+
+<div class="divider">✦</div>
+
 <section>
   <div class="kicker">Zooming out</div>
   <h2>The through-line</h2>
-  <p>Look at what never changed from the first commit to the Phase 10 plan: the <strong>UI-loop / network-task split</strong>, the <strong><code class="inl">select!</code> loop</strong> with two match arms, <strong>one room code deriving everything a flock needs</strong>, and <strong>a new ALPN for every point-to-point job</strong> (voice, video, sync, control). Voice fit that shape. E2E fit it in two lines. Video, roosts, and permissions will fit it too. You didn't just build features — you built a shape that features fall into.</p>
-  <p class="dim">Suggested rhythm from here: Phase 4 (video) is self-contained fun. Phase 5 is the highest-leverage small work — stable identity and names make everything after it nicer. Phase 9 items 1–2 are worth pulling forward the moment strangers start sharing room codes. Phases 7–8 are the real commitment; don't start a roost until flocks feel boring.</p>
-  <blockquote>No company owns the murmuration. One bird opens a flock, another joins, and the sky fills in between — built in the open, one runnable phase at a time.</blockquote>
+  <p>Look at what never changed from the first commit through Phase 6 and into the Phase 10 plan: the <strong>UI-loop / network-task split</strong>, the <strong><code class="inl">select!</code> loop</strong>, <strong>one room code deriving everything a flock needs</strong>, and <strong>a new ALPN for every point-to-point job</strong> (voice, video, sync, control). Voice fit that shape. E2E fit it in two lines. Video, many-flocks, and history all fit it — and roosts and permissions will too. You didn't just build features — you built a shape that features fall into.</p>
+  <p class="dim">Where it stands: Phases 0–6 ship in Starling-TUI today; the roost server (Phase 7) already runs from Starling-Server, with membership gating (Phase 8) the next real commitment. Phase 9 items 1–2 — signing and high-entropy invites — are worth pulling forward the moment strangers start sharing room codes.</p>
+  <blockquote>No company owns the murmuration. One bird hatches a flock, another joins, and the sky fills in between — built in the open, one runnable phase at a time.</blockquote>
 </section>
 </main>
 </div>
 
-<footer>Starling · Build Guide · v0.3.15 shipped, the sky ahead · Rust · ratatui · iroh · built in the open</footer>
+<footer>Starling · Build Guide · Starling-TUI v0.4.3 — Phases 0–6 shipped, the sky ahead · Rust · ratatui · iroh · built in the open by Saltfault</footer>
 
 </body>
 </html>
