@@ -12,6 +12,7 @@ fn main() -> anyhow::Result<()> {
                 std::process::exit(1);
             }
         },
+        Some("update") => update_self(),
 
         // ── System dependencies ──────────────────────────────────────
         Some("setup") => match args.get(2).map(String::as_str) {
@@ -346,6 +347,20 @@ fn install_deps_server() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn update_self() -> anyhow::Result<()> {
+    println!("Updating Starling...");
+    let status = std::process::Command::new("cargo")
+        .args(["install", "--git", "https://forgejo.hearthhome.lol/Saltfault/Starling.git"])
+        .status()
+        .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
+    if status.success() {
+        println!("✓ Starling updated to the latest version");
+    } else {
+        anyhow::bail!("update failed (exit code: {:?})", status.code());
+    }
+    Ok(())
+}
+
 fn install_server() -> anyhow::Result<()> {
     println!("Installing Starling Server...");
     let status = std::process::Command::new("cargo")
@@ -396,5 +411,6 @@ fn print_help() {
     println!("  starling server update         update the Server");
     println!("  starling server uninstall      uninstall the Server");
     println!();
+    println!("  starling update                update Starling to the latest version");
     println!("  starling help                  print this help");
 }
