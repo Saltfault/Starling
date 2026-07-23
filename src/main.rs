@@ -1,24 +1,27 @@
+const URL_STARLING: &str = "https://forgejo.hearthhome.lol/Saltfault/Starling.git";
+const URL_TUI: &str = "https://forgejo.hearthhome.lol/Saltfault/Starling-TUI.git";
+const URL_SERVER: &str = "https://forgejo.hearthhome.lol/Saltfault/Starling-Server.git";
+
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let cmd = args.get(1).map(String::as_str);
 
     match cmd {
-        // ── Installer ────────────────────────────────────────────────
         Some("install") => match args.get(2).map(String::as_str) {
-            Some("tui") => install_tui(),
-            Some("server") => install_server(),
+            Some("tui") => install_pkg("Starling TUI", URL_TUI, install_deps_tui),
+            Some("server") => install_pkg("Starling Server", URL_SERVER, install_deps_server),
             _ => {
                 eprintln!("Usage: starling install <tui|server>");
                 std::process::exit(1);
             }
         },
         Some("update") => match args.get(2).map(String::as_str) {
-            Some("tui") => update_tui(),
-            Some("server") => update_server(),
+            Some("tui") => update_pkg("Starling TUI", URL_TUI, install_deps_tui),
+            Some("server") => update_pkg("Starling Server", URL_SERVER, install_deps_server),
             None => {
                 update_self()?;
-                update_tui()?;
-                update_server()
+                update_pkg("Starling TUI", URL_TUI, install_deps_tui)?;
+                update_pkg("Starling Server", URL_SERVER, install_deps_server)
             }
             Some(other) => {
                 eprintln!("Unknown update target: {other}");
@@ -27,7 +30,6 @@ fn main() -> anyhow::Result<()> {
             }
         },
 
-        // ── TUI commands (handled directly) ──────────────────────────
         Some("leave") => {
             let _code = args.get(2).cloned().unwrap_or_default();
             println!("To leave a flock, simply close the app (Esc).");
@@ -110,34 +112,16 @@ fn main() -> anyhow::Result<()> {
         }
         Some("tui") => match args.get(2).map(String::as_str) {
             Some("version") => exec("starling-tui", &["--version"]),
-            Some("update") => update_tui(),
-            Some("uninstall") => {
-                println!("Uninstalling Starling TUI...");
-                let status = std::process::Command::new("cargo")
-                    .args(["uninstall", "starling-tui"])
-                    .status()
-                    .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
-                if status.success() {
-                    let cfg = config_dir();
-                    if cfg.exists() {
-                        let _ = std::fs::remove_dir_all(&cfg);
-                    }
-                    println!("✓ Starling TUI uninstalled");
-                } else {
-                    anyhow::bail!("uninstall failed (exit code: {:?})", status.code());
-                }
-                Ok(())
-            }
+            Some("update") => update_pkg("Starling TUI", URL_TUI, install_deps_tui),
+            Some("uninstall") => uninstall_pkg("starling-tui", "Starling TUI"),
             _ => {
                 eprintln!("Usage: starling tui <version|update|uninstall>");
                 std::process::exit(1);
             }
         },
 
-        // ── Profile wizard (forwarded to starling-tui) ──────────────
         Some("profile") => exec("starling-tui", &["profile"]),
 
-        // ── TUI commands (forwarded to starling-tui) ─────────────────
         Some("open") => exec("starling-tui", &[]),
         Some("join") => {
             let code = args.get(2).cloned().unwrap_or_else(|| {
@@ -147,7 +131,6 @@ fn main() -> anyhow::Result<()> {
             exec("starling-tui", &["join", &code])
         }
 
-        // ── Server commands (forwarded to starling-server) ───────────
         Some("roost") => {
             let rest: Vec<&str> = args.iter().skip(2).map(String::as_str).collect();
             exec("starling-server", &{
@@ -158,24 +141,8 @@ fn main() -> anyhow::Result<()> {
         }
         Some("server") => match args.get(2).map(String::as_str) {
             Some("version") => exec("starling-server", &["--version"]),
-            Some("update") => update_server(),
-            Some("uninstall") => {
-                println!("Uninstalling Starling Server...");
-                let status = std::process::Command::new("cargo")
-                    .args(["uninstall", "starling-server"])
-                    .status()
-                    .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
-                if status.success() {
-                    let cfg = config_dir();
-                    if cfg.exists() {
-                        let _ = std::fs::remove_dir_all(&cfg);
-                    }
-                    println!("✓ Starling Server uninstalled");
-                } else {
-                    anyhow::bail!("uninstall failed (exit code: {:?})", status.code());
-                }
-                Ok(())
-            }
+            Some("update") => update_pkg("Starling Server", URL_SERVER, install_deps_server),
+            Some("uninstall") => uninstall_pkg("starling-server", "Starling Server"),
             _ => {
                 eprintln!("Usage: starling server <version|update|uninstall>");
                 std::process::exit(1);
@@ -214,19 +181,46 @@ fn config_dir() -> std::path::PathBuf {
     }
 }
 
-fn install_tui() -> anyhow::Result<()> {
-    install_deps_tui()?;
-    println!("Installing Starling TUI...");
+fn cargo_install(url: &str) -> anyhow::Result<()> {
     let status = std::process::Command::new("cargo")
-        .args(["install", "--jobs", "2", "--git",
-            "https://forgejo.hearthhome.lol/Saltfault/Starling-TUI.git"])
+        .args(["install", "--jobs", "2", "--git", url])
+        .status()
+        .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
+    if status.success() { Ok(()) }
+    else { anyhow::bail!("cargo install failed (exit code: {:?})", status.code()) }
+}
+
+fn install_pkg(name: &str, url: &str, deps: fn() -> anyhow::Result<()>) -> anyhow::Result<()> {
+    deps()?;
+    println!("Installing {name}...");
+    cargo_install(url)?;
+    println!("✓ {name} installed");
+    Ok(())
+}
+
+fn update_pkg(name: &str, url: &str, deps: fn() -> anyhow::Result<()>) -> anyhow::Result<()> {
+    deps()?;
+    println!("Updating {name}...");
+    cargo_install(url)?;
+    println!("✓ {name} updated to the latest version");
+    Ok(())
+}
+
+fn uninstall_pkg(bin: &str, name: &str) -> anyhow::Result<()> {
+    println!("Uninstalling {name}...");
+    let status = std::process::Command::new("cargo")
+        .args(["uninstall", bin])
         .status()
         .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
     if status.success() {
-        println!("✓ Starling TUI installed");
+        let cfg = config_dir();
+        if cfg.exists() {
+            let _ = std::fs::remove_dir_all(&cfg);
+        }
+        println!("✓ {name} uninstalled");
         Ok(())
     } else {
-        anyhow::bail!("install failed (exit code: {:?})", status.code());
+        anyhow::bail!("uninstall failed (exit code: {:?})", status.code());
     }
 }
 
@@ -241,34 +235,50 @@ fn run_shell(cmd: &str, args: &[&str]) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn install_deps_tui() -> anyhow::Result<()> {
-    if cfg!(target_os = "linux") {
-        if std::process::Command::new("apt-get").arg("--version").output().is_ok() {
-            println!("Detected Debian/Ubuntu/WSL — installing...");
-            run_shell("sudo", &["apt-get", "update"])?;
-            run_shell("sudo", &["apt-get", "install", "-y",
-                "build-essential", "pkg-config", "libasound2-dev",
-                "libpulse-dev", "libclang-dev", "libv4l-dev"])?;
+fn install_linux_deps(packages: &[&str], extra_wsl: Option<&[&str]>) -> anyhow::Result<()> {
+    if std::process::Command::new("apt-get").arg("--version").output().is_ok() {
+        println!("Detected Debian/Ubuntu/WSL — installing...");
+        run_shell("sudo", &["apt-get", "update"])?;
+        let mut apt = vec!["install", "-y"];
+        apt.extend(packages);
+        run_shell("sudo", &apt)?;
+        if let Some(wsl_pkgs) = extra_wsl {
             if std::path::Path::new("/mnt/wslg").exists() && !std::path::Path::new("/etc/asound.conf").exists() {
                 println!("Setting up WSL2 audio bridge...");
-                run_shell("sudo", &["apt-get", "install", "-y", "libasound2-plugins"])?;
+                let mut wsl = vec!["install", "-y"];
+                wsl.extend(wsl_pkgs);
+                run_shell("sudo", &wsl)?;
                 let conf = "pcm.!default {\ntype pulse\n}\nctl.!default {\ntype pulse\n}\n";
                 std::fs::write("/etc/asound.conf", conf).ok();
                 println!("WSL2 audio bridge installed.");
             }
-        } else if std::process::Command::new("dnf").arg("--version").output().is_ok() {
-            println!("Detected Fedora — installing...");
-            run_shell("sudo", &["dnf", "install", "-y",
-                "gcc", "pkgconf-pkg-config", "alsa-lib-devel",
-                "pulseaudio-libs-devel", "clang-devel"])?;
-        } else if std::process::Command::new("pacman").arg("--version").output().is_ok() {
-            println!("Detected Arch — installing...");
-            run_shell("sudo", &["pacman", "-S", "--noconfirm",
-                "base-devel", "pkgconf", "alsa-lib", "pulseaudio", "clang"])?;
-        } else {
-            eprintln!("Could not detect a supported package manager.");
+        }
+    } else if std::process::Command::new("dnf").arg("--version").output().is_ok() {
+        println!("Detected Fedora — installing...");
+        let mut dnf = vec!["install", "-y"];
+        dnf.extend(packages);
+        run_shell("sudo", &["dnf", "install", "-y"])?;
+    } else if std::process::Command::new("pacman").arg("--version").output().is_ok() {
+        println!("Detected Arch — installing...");
+        let mut pac = vec!["-S", "--noconfirm"];
+        pac.extend(packages);
+        run_shell("sudo", &["pacman", "-S", "--noconfirm"])?;
+    } else {
+        eprintln!("Could not detect a supported package manager.");
+        return Err(anyhow::anyhow!("unsupported package manager"));
+    }
+    Ok(())
+}
+
+fn install_deps_tui() -> anyhow::Result<()> {
+    if cfg!(target_os = "linux") {
+        let r = install_linux_deps(
+            &["build-essential", "pkg-config", "libasound2-dev", "libpulse-dev", "libclang-dev", "libv4l-dev"],
+            Some(&["libasound2-plugins"]),
+        );
+        if let Err(e) = r {
             eprintln!("Please install manually: gcc, pkg-config, alsa-lib-dev, pulseaudio-dev, libclang-dev, libv4l-dev");
-            std::process::exit(1);
+            return Err(e);
         }
     } else if cfg!(target_os = "macos") {
         if std::process::Command::new("brew").arg("--version").output().is_ok() {
@@ -290,23 +300,13 @@ fn install_deps_tui() -> anyhow::Result<()> {
 
 fn install_deps_server() -> anyhow::Result<()> {
     if cfg!(target_os = "linux") {
-        if std::process::Command::new("apt-get").arg("--version").output().is_ok() {
-            println!("Detected Debian/Ubuntu/WSL — installing...");
-            run_shell("sudo", &["apt-get", "update"])?;
-            run_shell("sudo", &["apt-get", "install", "-y",
-                "build-essential", "pkg-config", "libclang-dev"])?;
-        } else if std::process::Command::new("dnf").arg("--version").output().is_ok() {
-            println!("Detected Fedora — installing...");
-            run_shell("sudo", &["dnf", "install", "-y",
-                "gcc", "pkgconf-pkg-config", "clang-devel"])?;
-        } else if std::process::Command::new("pacman").arg("--version").output().is_ok() {
-            println!("Detected Arch — installing...");
-            run_shell("sudo", &["pacman", "-S", "--noconfirm",
-                "base-devel", "pkgconf", "clang"])?;
-        } else {
-            eprintln!("Could not detect a supported package manager.");
+        let r = install_linux_deps(
+            &["build-essential", "pkg-config", "libclang-dev"],
+            None,
+        );
+        if let Err(e) = r {
             eprintln!("Please install manually: gcc, pkg-config, libclang-dev");
-            std::process::exit(1);
+            return Err(e);
         }
     } else if cfg!(target_os = "macos") {
         if std::process::Command::new("brew").arg("--version").output().is_ok() {
@@ -328,15 +328,12 @@ fn install_deps_server() -> anyhow::Result<()> {
 
 fn update_self() -> anyhow::Result<()> {
     if cfg!(windows) {
-        // On Windows the running exe is locked; we delegate to a
-        // PowerShell script that renames the running binary aside,
-        // runs cargo install, then cleans up the backup.
         println!("Updating Starling...");
         let script = format!(
             r#"$old = "$env:USERPROFILE\.cargo\bin\starling.exe"
 $bak = "$env:USERPROFILE\.cargo\bin\starling.old"
 ren $old $bak 2>$null
-cargo install --jobs 2 --git https://forgejo.hearthhome.lol/Saltfault/Starling.git
+cargo install --jobs 2 --git {URL_STARLING}
 if ($LASTEXITCODE -eq 0) {{ ri $bak -ea 0; exit 0 }} else {{ ren $bak $old 2>$null; exit $LASTEXITCODE }}"#
         );
         let ps = std::env::temp_dir().join("starling-update.ps1");
@@ -354,70 +351,14 @@ if ($LASTEXITCODE -eq 0) {{ ri $bak -ea 0; exit 0 }} else {{ ren $bak $old 2>$nu
             eprintln!("If the update failed because starling.exe was locked,");
             eprintln!("open a new terminal and run this command directly:");
             eprintln!();
-            eprintln!("  cargo install --git https://forgejo.hearthhome.lol/Saltfault/Starling.git");
+            eprintln!("  cargo install --git {URL_STARLING}");
             anyhow::bail!("update failed (exit code: {:?})", status.code());
         }
     } else {
         println!("Updating Starling...");
-        let status = std::process::Command::new("cargo")
-            .args(["install", "--jobs", "2", "--git",
-                "https://forgejo.hearthhome.lol/Saltfault/Starling.git"])
-            .status()
-            .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
-        if status.success() {
-            println!("✓ Starling updated to the latest version");
-            Ok(())
-        } else {
-            anyhow::bail!("update failed (exit code: {:?})", status.code());
-        }
-    }
-}
-
-fn update_tui() -> anyhow::Result<()> {
-    install_deps_tui()?;
-    println!("Updating Starling TUI...");
-    let status = std::process::Command::new("cargo")
-        .args(["install", "--jobs", "2", "--git",
-            "https://forgejo.hearthhome.lol/Saltfault/Starling-TUI.git"])
-        .status()
-        .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
-    if status.success() {
-        println!("✓ Starling TUI updated to the latest version");
-    } else {
-        anyhow::bail!("update failed (exit code: {:?})", status.code());
-    }
-    Ok(())
-}
-
-fn update_server() -> anyhow::Result<()> {
-    install_deps_server()?;
-    println!("Updating Starling Server...");
-    let status = std::process::Command::new("cargo")
-        .args(["install", "--jobs", "2", "--git",
-            "https://forgejo.hearthhome.lol/Saltfault/Starling-Server.git"])
-        .status()
-        .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
-    if status.success() {
-        println!("✓ Starling Server updated to the latest version");
-    } else {
-        anyhow::bail!("update failed (exit code: {:?})", status.code());
-    }
-    Ok(())
-}
-
-fn install_server() -> anyhow::Result<()> {
-    install_deps_server()?;
-    println!("Installing Starling Server...");
-    let status = std::process::Command::new("cargo")
-        .args(["install", "--jobs", "2", "--git",
-            "https://forgejo.hearthhome.lol/Saltfault/Starling-Server.git"])
-        .status()
-        .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
-    if status.success() {
-        println!("✓ Starling Server installed");
+        cargo_install(URL_STARLING)?;
+        println!("✓ Starling updated to the latest version");
         Ok(())
-    } else {
-        anyhow::bail!("install failed (exit code: {:?})", status.code());
     }
 }
 
