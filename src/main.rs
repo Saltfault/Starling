@@ -13,6 +13,16 @@ fn main() -> anyhow::Result<()> {
             }
         },
 
+        // ── System dependencies ──────────────────────────────────────
+        Some("setup") => match args.get(2).map(String::as_str) {
+            Some("tui") => install_deps_tui(),
+            Some("server") => install_deps_server(),
+            _ => {
+                eprintln!("Usage: starling setup <tui|server>");
+                std::process::exit(1);
+            }
+        },
+
         // ── TUI commands (handled directly) ──────────────────────────
         Some("leave") => {
             let _code = args.get(2).cloned().unwrap_or_default();
@@ -51,7 +61,7 @@ fn main() -> anyhow::Result<()> {
             if cfg.exists() {
                 println!("  ✓ config directory: {}", cfg.display());
             } else {
-                println!("  ✗ config directory missing — run `starling setup`");
+                println!("  ✗ config directory missing — run `starling profile`");
                 return Ok(());
             }
             let identity = cfg.join("identity.key");
@@ -64,7 +74,7 @@ fn main() -> anyhow::Result<()> {
             if profile.exists() {
                 println!("  ✓ profile: {}", profile.display());
             } else {
-                println!("  ✗ profile not configured — run `starling setup`");
+                println!("  ✗ profile not configured — run `starling profile`");
             }
             let roosts_dir = cfg.join("roosts");
             if roosts_dir.exists() {
@@ -133,9 +143,11 @@ fn main() -> anyhow::Result<()> {
             }
         },
 
+        // ── Profile wizard (forwarded to starling-tui) ──────────────
+        Some("profile") => exec("starling-tui", &["profile"]),
+
         // ── TUI commands (forwarded to starling-tui) ─────────────────
         Some("open") => exec("starling-tui", &[]),
-        Some("setup") => exec("starling-tui", &["setup"]),
         Some("join") => {
             let code = args.get(2).cloned().unwrap_or_else(|| {
                 eprintln!("Usage: starling join <code>");
@@ -238,6 +250,102 @@ fn install_tui() -> anyhow::Result<()> {
     }
 }
 
+fn run_shell(cmd: &str, args: &[&str]) -> anyhow::Result<()> {
+    let status = std::process::Command::new(cmd)
+        .args(args)
+        .status()
+        .map_err(|e| anyhow::anyhow!("failed to run {cmd}: {e}"))?;
+    if !status.success() {
+        anyhow::bail!("{cmd} failed (exit code: {:?})", status.code());
+    }
+    Ok(())
+}
+
+fn install_deps_tui() -> anyhow::Result<()> {
+    if cfg!(target_os = "linux") {
+        if std::process::Command::new("apt-get").arg("--version").output().is_ok() {
+            println!("Detected Debian/Ubuntu/WSL — installing...");
+            run_shell("sudo", &["apt-get", "update"])?;
+            run_shell("sudo", &["apt-get", "install", "-y",
+                "build-essential", "pkg-config", "libasound2-dev",
+                "libpulse-dev", "libclang-dev", "libv4l-dev"])?;
+            if std::path::Path::new("/mnt/wslg").exists() && !std::path::Path::new("/etc/asound.conf").exists() {
+                println!("Setting up WSL2 audio bridge...");
+                run_shell("sudo", &["apt-get", "install", "-y", "libasound2-plugins"])?;
+                let conf = "pcm.!default {\ntype pulse\n}\nctl.!default {\ntype pulse\n}\n";
+                std::fs::write("/etc/asound.conf", conf).ok();
+                println!("WSL2 audio bridge installed.");
+            }
+        } else if std::process::Command::new("dnf").arg("--version").output().is_ok() {
+            println!("Detected Fedora — installing...");
+            run_shell("sudo", &["dnf", "install", "-y",
+                "gcc", "pkgconf-pkg-config", "alsa-lib-devel",
+                "pulseaudio-libs-devel", "clang-devel"])?;
+        } else if std::process::Command::new("pacman").arg("--version").output().is_ok() {
+            println!("Detected Arch — installing...");
+            run_shell("sudo", &["pacman", "-S", "--noconfirm",
+                "base-devel", "pkgconf", "alsa-lib", "pulseaudio", "clang"])?;
+        } else {
+            eprintln!("Could not detect a supported package manager.");
+            eprintln!("Please install manually: gcc, pkg-config, alsa-lib-dev, pulseaudio-dev, libclang-dev, libv4l-dev");
+            std::process::exit(1);
+        }
+    } else if cfg!(target_os = "macos") {
+        if std::process::Command::new("brew").arg("--version").output().is_ok() {
+            println!("Detected macOS (Homebrew) — installing...");
+            run_shell("brew", &["install", "pkg-config"])?;
+        } else {
+            eprintln!("Please install Homebrew first: https://brew.sh");
+            eprintln!("Then run: brew install pkg-config");
+            std::process::exit(1);
+        }
+    } else if cfg!(target_os = "windows") {
+        println!("On Windows, install Visual Studio Build Tools:");
+        println!("  https://visualstudio.microsoft.com/visual-cpp-build-tools/");
+        println!("Select 'Desktop development with C++'.");
+    }
+    println!("✓ TUI system dependencies installed");
+    Ok(())
+}
+
+fn install_deps_server() -> anyhow::Result<()> {
+    if cfg!(target_os = "linux") {
+        if std::process::Command::new("apt-get").arg("--version").output().is_ok() {
+            println!("Detected Debian/Ubuntu/WSL — installing...");
+            run_shell("sudo", &["apt-get", "update"])?;
+            run_shell("sudo", &["apt-get", "install", "-y",
+                "build-essential", "pkg-config", "libclang-dev"])?;
+        } else if std::process::Command::new("dnf").arg("--version").output().is_ok() {
+            println!("Detected Fedora — installing...");
+            run_shell("sudo", &["dnf", "install", "-y",
+                "gcc", "pkgconf-pkg-config", "clang-devel"])?;
+        } else if std::process::Command::new("pacman").arg("--version").output().is_ok() {
+            println!("Detected Arch — installing...");
+            run_shell("sudo", &["pacman", "-S", "--noconfirm",
+                "base-devel", "pkgconf", "clang"])?;
+        } else {
+            eprintln!("Could not detect a supported package manager.");
+            eprintln!("Please install manually: gcc, pkg-config, libclang-dev");
+            std::process::exit(1);
+        }
+    } else if cfg!(target_os = "macos") {
+        if std::process::Command::new("brew").arg("--version").output().is_ok() {
+            println!("Detected macOS (Homebrew) — installing...");
+            run_shell("brew", &["install", "pkg-config"])?;
+        } else {
+            eprintln!("Please install Homebrew first: https://brew.sh");
+            eprintln!("Then run: brew install pkg-config");
+            std::process::exit(1);
+        }
+    } else if cfg!(target_os = "windows") {
+        println!("On Windows, install Visual Studio Build Tools:");
+        println!("  https://visualstudio.microsoft.com/visual-cpp-build-tools/");
+        println!("Select 'Desktop development with C++'.");
+    }
+    println!("✓ Server system dependencies installed");
+    Ok(())
+}
+
 fn install_server() -> anyhow::Result<()> {
     println!("Installing Starling Server...");
     let status = std::process::Command::new("cargo")
@@ -258,10 +366,12 @@ fn print_help() {
     println!("Usage:");
     println!("  starling install tui            install the TUI client");
     println!("  starling install server         install the headless roost server");
+    println!("  starling setup tui              install TUI system dependencies");
+    println!("  starling setup server           install Server system dependencies");
     println!();
+    println!("  starling profile                configure your profile (name, audio, identity)");
     println!("  starling join <code>            join a flock or roost");
     println!("  starling open                   open the TUI");
-    println!("  starling setup                  configure profile and audio");
     println!("  starling leave <code>           leave a flock or roost");
     println!("  starling list                   list flocks and roosts on disk");
     println!("  starling doctor                 diagnose setup");
