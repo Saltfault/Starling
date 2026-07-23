@@ -42,93 +42,60 @@ jobs:
         if: steps.check.outputs.skip == 'false'
         run: cargo test --all-features
 
-  build:
-    needs: detect
-    if: needs.detect.outputs.skip == 'false'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Linux targets
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: i686-unknown-linux-gnu
-            os: ubuntu-latest
-            cross_pkg: gcc-i686-linux-gnu
-            linker: i686-linux-gnu-gcc
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            cross_pkg: gcc-aarch64-linux-gnu
-            linker: aarch64-linux-gnu-gcc
-          # Windows targets cross-compiled via MinGW
-          - target: x86_64-pc-windows-gnu
-            os: ubuntu-latest
-            cross_pkg: gcc-mingw-w64-x86-64
-            linker: x86_64-w64-mingw32-gcc
-          - target: i686-pc-windows-gnu
-            os: ubuntu-latest
-            cross_pkg: gcc-mingw-w64-i686
-            linker: i686-w64-mingw32-gcc
-    steps:
-      - uses: actions/checkout@v6
-      - name: Install Rust
-        shell: bash
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-      - name: Install cross-compilation packages
-        if: matrix.cross_pkg
-        shell: bash
-        run: apt-get update && apt-get install -y ${{ matrix.cross_pkg }}
-      - name: Set cross-linker
-        if: matrix.linker
-        shell: bash
-        run: |
-          target_upper=$(echo ${{ matrix.target }} | tr '[:lower:]-' '[:upper:]_')
-          echo "CARGO_TARGET_${target_upper}_LINKER=${{ matrix.linker }}" >> $GITHUB_ENV
-      - name: Add target
-        shell: bash
-        run: rustup target add ${{ matrix.target }}
-      - name: Build release
-        shell: bash
-        run: cargo build --release --target ${{ matrix.target }}
-      - name: Prepare binary
-        shell: bash
-        run: |
-          ext=""
-          [[ "${{ matrix.target }}" == *-windows-* ]] && ext=".exe"
-          cp "target/${{ matrix.target }}/release/starling${ext}" "starling-${{ matrix.target }}${ext}"
-      - name: Upload binary
-        uses: actions/upload-artifact@v3
-        with:
-          name: starling-${{ matrix.target }}
-          path: starling-${{ matrix.target }}*
-
   release:
-    needs: [detect, build]
+    needs: detect
     if: needs.detect.outputs.skip == 'false'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v3
-        with:
-          path: artifacts
+      - uses: actions/checkout@v6
 
-      - name: Install tools
+      - name: Install Rust
         run: |
-          apt-get update && apt-get install -y jq
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-      - name: Download macOS binaries from GitHub Release
-        shell: bash
+      - name: Install cross-compilation packages
+        run: |
+          apt-get update && apt-get install -y \
+            gcc-i686-linux-gnu \
+            gcc-aarch64-linux-gnu \
+            gcc-mingw-w64-x86-64 \
+            gcc-mingw-w64-i686
+
+      - name: Build all targets
+        run: |
+          set -e
+          targets=(
+            "x86_64-unknown-linux-gnu"
+            "i686-unknown-linux-gnu:gcc:i686-linux-gnu-gcc"
+            "aarch64-unknown-linux-gnu:gcc:aarch64-linux-gnu-gcc"
+            "x86_64-pc-windows-gnu:x86_64-w64-mingw32-gcc:x86_64-w64-mingw32-gcc"
+            "i686-pc-windows-gnu:i686-w64-mingw32-gcc:i686-w64-mingw32-gcc"
+          )
+          for entry in "${targets[@]}"; do
+            IFS=':' read -r target pkg linker <<< "$entry"
+            echo "=== Building $target ==="
+            rustup target add "$target"
+            if [ -n "$linker" ]; then
+              target_upper=$(echo "$target" | tr '[:lower:]-' '[:upper:]_')
+              export "CARGO_TARGET_${target_upper}_LINKER=$linker"
+            fi
+            cargo build --release --target "$target"
+            ext=""
+            [[ "$target" == *-windows-* ]] && ext=".exe"
+            cp "target/$target/release/starling$ext" "starling-$target$ext"
+          done
+          ls -la starling-*
+
+      - name: Download macOS from Linux + Windows from GitHub Release
         env:
           GH_TOKEN: ${{ secrets.ACTION_TOKEN_GITHUB }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
-            echo "ACTION_TOKEN_GITHUB not set, skipping macOS download"
+            echo "ACTION_TOKEN_GITHUB not set, skipping GitHub download"
             exit 0
           fi
           TAG="v${{ needs.detect.outputs.version }}"
-          mkdir -p artifacts
           for i in $(seq 1 30); do
             assets=$(curl -s "https://api.github.com/repos/Saltfault/Starling/releases/tags/$TAG" \
               -H "Authorization: Bearer $GH_TOKEN" | jq -r '.assets[]?.browser_download_url // empty')
@@ -137,15 +104,15 @@ jobs:
             sleep 30
           done
           if [ -z "$assets" ]; then
-            echo "macOS binaries not yet available on GitHub after retries"
+            echo "macOS binaries not available on GitHub after retries"
             exit 0
           fi
           echo "$assets" | while read url; do
-            curl -sL -o "artifacts/$(basename $url)" "$url"
+            curl -sL -o "$(basename $url)" "$url"
           done
+          ls -la *.darwin
 
       - name: Create Forgejo Release
-        shell: bash
         env:
           FORGEJO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -153,42 +120,35 @@ jobs:
           OWNER="${GITHUB_REPOSITORY_OWNER}"
           REPO="${GITHUB_REPOSITORY#*/}"
           API="https://${GITHUB_SERVER_URL#https://}/api/v1"
+          mkdir -p artifacts
+          mv starling-* artifacts/ 2>/dev/null || true
 
-          release_id=$(curl -s "$API/repos/$OWNER/$REPO/releases/tags/$TAG" \
-            -H "Authorization: Bearer $FORGEJO_TOKEN" | jq -r '.id // empty')
+          # delete existing tag+release so we can recreate cleanly
+          curl -s -X DELETE "$API/repos/$OWNER/$REPO/releases/tags/$TAG" \
+            -H "Authorization: Bearer $FORGEJO_TOKEN" > /dev/null 2>&1
+
+          release_id=$(curl -s -X POST "$API/repos/$OWNER/$REPO/releases" \
+            -H "Authorization: Bearer $FORGEJO_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"draft\":false,\"prerelease\":false}" | jq -r '.id // empty')
 
           if [ -z "$release_id" ]; then
-            release_id=$(curl -s -X POST "$API/repos/$OWNER/$REPO/releases" \
-              -H "Authorization: Bearer $FORGEJO_TOKEN" \
-              -H "Content-Type: application/json" \
-              -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"draft\":false,\"prerelease\":false}" | jq -r '.id // empty')
-          fi
-
-          if [ -z "$release_id" ]; then
-            echo "Could not create or find Forgejo release for $TAG"
+            echo "Failed to create Forgejo release"
             exit 1
           fi
-
-          existing_assets=$(curl -s "$API/repos/$OWNER/$REPO/releases/$release_id/assets" \
-            -H "Authorization: Bearer $FORGEJO_TOKEN" | jq -r '.[].name // empty')
 
           for f in artifacts/*; do
             [ ! -f "$f" ] && continue
             filename=$(basename "$f")
-            if echo "$existing_assets" | grep -qx "$filename"; then
-              echo "Skipping $filename (already in forgejo release)"
-              continue
-            fi
-            echo "Uploading $filename to Forgejo release $release_id"
+            echo "Uploading $filename"
             curl -s -X POST "$API/repos/$OWNER/$REPO/releases/$release_id/assets" \
               -H "Authorization: Bearer $FORGEJO_TOKEN" \
               -F "attachment=@$f" > /dev/null 2>&1 || echo "Upload failed for $filename"
           done
 
-          echo "Forgejo release $TAG populated with $(find artifacts -type f | wc -l) assets"
+          echo "Forgejo release $TAG created with $(find artifacts -type f | wc -l) assets"
 
-      - name: Upload binaries to GitHub Release
-        shell: bash
+      - name: Upload all binaries to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.ACTION_TOKEN_GITHUB }}
         run: |
@@ -205,7 +165,7 @@ jobs:
             sleep 30
           done
           if [ -z "$release_id" ]; then
-            echo "GitHub release $TAG does not exist yet after retries, skipping"
+            echo "GitHub release $TAG does not exist after retries"
             exit 0
           fi
           existing_assets=$(curl -s "https://api.github.com/repos/Saltfault/Starling/releases/$release_id/assets" \
@@ -214,13 +174,13 @@ jobs:
             [ ! -f "$f" ] && continue
             filename=$(basename "$f")
             if echo "$existing_assets" | grep -qx "$filename"; then
-              echo "Skipping $filename (already in GitHub release)"
+              echo "Skipping $filename (already in release)"
               continue
             fi
-            echo "Uploading $filename to GitHub release $release_id"
+            echo "Uploading $filename to GitHub release"
             curl -s -X POST "https://uploads.github.com/repos/Saltfault/Starling/releases/$release_id/assets?name=$filename" \
               -H "Authorization: Bearer $GH_TOKEN" \
               -H "Content-Type: application/octet-stream" \
               --data-binary "@$f" > /dev/null 2>&1 || echo "Upload failed for $filename"
           done
-          echo "GitHub Release supplemented with $(find artifacts -type f | wc -l) assets"
+          echo "GitHub Release supplemented"
