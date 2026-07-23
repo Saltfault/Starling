@@ -1,0 +1,158 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Extract version
+        id: version
+        run: echo "value=$(grep '^version' Cargo.toml | sed 's/.*"\(.*\)"/\1/')" >> "$GITHUB_OUTPUT"
+      - name: Check version increased
+        id: check
+        run: |
+          latest_tag=$(git tag --list 'v*' --sort=-v:refname | head -1)
+          current="v${{ steps.version.outputs.value }}"
+          if [ -z "$latest_tag" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$current" = "$latest_tag" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+      - name: Run tests
+        if: steps.check.outputs.skip == 'false'
+        run: cargo test --all-features
+
+  build:
+    needs: detect
+    if: needs.detect.outputs.skip == 'false'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: i686-unknown-linux-gnu
+            os: ubuntu-latest
+            cross: true
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            cross: true
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+          - target: i686-pc-windows-msvc
+            os: windows-latest
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.target }}
+      - name: Setup cross-compilation toolchain
+        if: matrix.cross
+        uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: ${{ matrix.target }}
+      - name: Build release
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Prepare binary
+        shell: bash
+        run: |
+          ext=""
+          [[ "${{ matrix.target }}" == *-windows-* ]] && ext=".exe"
+          cp "target/${{ matrix.target }}/release/starling${ext}" "starling-${{ matrix.target }}${ext}"
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: starling-${{ matrix.target }}
+          path: starling-${{ matrix.target }}*
+
+  release:
+    needs: [detect, build]
+    if: needs.detect.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Download macOS binaries from GitHub Release
+        if: secrets.GH_PAT != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          TAG="v${{ needs.detect.outputs.version }}"
+          mkdir -p artifacts
+          gh release download "$TAG" --repo "Saltfault/Starling" --dir artifacts --skip-existing 2>&1 || echo "macOS binaries not yet available"
+
+      - name: Create Forgejo Release
+        shell: bash
+        env:
+          FORGEJO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ needs.detect.outputs.version }}"
+          OWNER="${GITHUB_REPOSITORY_OWNER}"
+          REPO="${GITHUB_REPOSITORY#*/}"
+          API="https://${GITHUB_SERVER_URL#https://}/api/v1"
+
+          # delete existing release/tag if present
+          curl -s -X DELETE "$API/repos/$OWNER/$REPO/releases/tags/$TAG" \
+            -H "Authorization: Bearer $FORGEJO_TOKEN" > /dev/null 2>&1
+          curl -s -X DELETE "$API/repos/$OWNER/$REPO/tags/$TAG" \
+            -H "Authorization: Bearer $FORGEJO_TOKEN" > /dev/null 2>&1
+
+          # create release
+          release_id=$(curl -s -X POST "$API/repos/$OWNER/$REPO/releases" \
+            -H "Authorization: Bearer $FORGEJO_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"draft\":false,\"prerelease\":false}" | jq -r '.id')
+
+          if [ "$release_id" = "null" ] || [ -z "$release_id" ]; then
+            echo "Failed to create release"
+            exit 1
+          fi
+
+          # upload assets
+          for f in artifacts/*; do
+            [ ! -f "$f" ] && continue
+            filename=$(basename "$f")
+            echo "Uploading $filename to Forgejo release $release_id"
+            curl -s -X POST "$API/repos/$OWNER/$REPO/releases/$release_id/assets" \
+              -H "Authorization: Bearer $FORGEJO_TOKEN" \
+              -F "attachment=@$f" > /dev/null
+          done
+
+          echo "Forgejo release $TAG created with $(find artifacts -type f | wc -l) assets"
+
+      - name: Upload Linux + Windows binaries to GitHub Release
+        if: secrets.GH_PAT != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          TAG="v${{ needs.detect.outputs.version }}"
+          for f in artifacts/*; do
+            [ ! -f "$f" ] && continue
+            gh release upload "$TAG" "$f" --repo "Saltfault/Starling" --clobber 2>&1 || echo "upload to GitHub failed for $f"
+          done
+          echo "GitHub Release supplemented with $(find artifacts -type f | wc -l) assets"
