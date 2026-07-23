@@ -28,8 +28,8 @@ starling install server     # the roost server (host a community)
 Then use them through the same `starling` command:
 
 ```bash
-starling setup              # one-time profile + audio wizard
-starling open               # launch the client
+starling profile            # one-time profile + audio wizard
+starling open               # launch the client (bare `starling` prints help)
 starling join BIRD-...      # join a flock by invite code
 starling roost create my-community   # create a roost (needs `install server`)
 ```
@@ -85,7 +85,7 @@ Starling uses a handful of bird terms, and only where they carry weight. Everyth
 | **Starling** | The whole platform |
 | **The murmuration** | The peer-to-peer network itself — thousands of leaderless birds, each reacting only to its neighbors, exactly like the gossip mesh underneath |
 | **Bird** | A single node / user |
-| **Flock** | A room — one gossip topic, one shared encryption key. **Hatched** by one bird, joined with its invite code |
+| **Flock** | A room — one gossip topic, one shared encryption key. **Hatched** by one bird, joined by its invite code |
 | **Roost** | A bird that stays online to keep a community's history and channels |
 | **Chirp** | A private message sealed to a single bird |
 
