@@ -327,15 +327,37 @@ fn install_deps_server() -> anyhow::Result<()> {
 }
 
 fn update_self() -> anyhow::Result<()> {
-    // On Windows we must move the running exe aside so cargo can write the
-    // replacement.  We restore the backup if the install fails.
-    #[cfg(windows)]
-    let backup = std::env::current_exe().ok().and_then(|exe| {
-        let bak = exe.with_extension("exe.old");
-        std::fs::rename(&exe, &bak).ok().map(|_| (bak, exe))
-    });
-
-    let result = (|| -> anyhow::Result<()> {
+    if cfg!(windows) {
+        // On Windows the running exe is locked; we delegate to a
+        // PowerShell script that renames the running binary aside,
+        // runs cargo install, then cleans up the backup.
+        println!("Updating Starling...");
+        let script = format!(
+            r#"$old = "$env:USERPROFILE\.cargo\bin\starling.exe"
+$bak = "$env:USERPROFILE\.cargo\bin\starling.old"
+ren $old $bak 2>$null
+cargo install --jobs 2 --git https://forgejo.hearthhome.lol/Saltfault/Starling.git
+if ($LASTEXITCODE -eq 0) {{ ri $bak -ea 0; exit 0 }} else {{ ren $bak $old 2>$null; exit $LASTEXITCODE }}"#
+        );
+        let ps = std::env::temp_dir().join("starling-update.ps1");
+        let _ = std::fs::write(&ps, script);
+        let status = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(&ps)
+            .status()
+            .map_err(|e| anyhow::anyhow!("failed to run PowerShell: {e}"))?;
+        let _ = std::fs::remove_file(&ps);
+        if status.success() {
+            println!("✓ Starling updated to the latest version");
+            Ok(())
+        } else {
+            eprintln!("If the update failed because starling.exe was locked,");
+            eprintln!("open a new terminal and run this command directly:");
+            eprintln!();
+            eprintln!("  cargo install --git https://forgejo.hearthhome.lol/Saltfault/Starling.git");
+            anyhow::bail!("update failed (exit code: {:?})", status.code());
+        }
+    } else {
         println!("Updating Starling...");
         let status = std::process::Command::new("cargo")
             .args(["install", "--jobs", "2", "--git",
@@ -348,19 +370,7 @@ fn update_self() -> anyhow::Result<()> {
         } else {
             anyhow::bail!("update failed (exit code: {:?})", status.code());
         }
-    })();
-
-    #[cfg(windows)]
-    if let Some((bak, exe)) = &backup {
-        if result.is_ok() {
-            let _ = std::fs::remove_file(bak);
-        } else {
-            // restore the original binary so the user isn't left stranded
-            let _ = std::fs::rename(bak, exe);
-        }
     }
-
-    result
 }
 
 fn update_tui() -> anyhow::Result<()> {
