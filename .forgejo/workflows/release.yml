@@ -96,10 +96,10 @@ jobs:
           path: artifacts
 
       - name: Download macOS binaries from GitHub Release
-        if: secrets.GH_PAT != ''
+        if: secrets.ACTION_TOKEN_GITHUB != ''
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.ACTION_TOKEN_GITHUB }}
         run: |
           TAG="v${{ needs.detect.outputs.version }}"
           mkdir -p artifacts
@@ -115,40 +115,40 @@ jobs:
           REPO="${GITHUB_REPOSITORY#*/}"
           API="https://${GITHUB_SERVER_URL#https://}/api/v1"
 
-          # delete existing release/tag if present
-          curl -s -X DELETE "$API/repos/$OWNER/$REPO/releases/tags/$TAG" \
-            -H "Authorization: Bearer $FORGEJO_TOKEN" > /dev/null 2>&1
-          curl -s -X DELETE "$API/repos/$OWNER/$REPO/tags/$TAG" \
-            -H "Authorization: Bearer $FORGEJO_TOKEN" > /dev/null 2>&1
+          # find existing release
+          release_id=$(curl -sf "$API/repos/$OWNER/$REPO/releases/tags/$TAG" \
+            -H "Authorization: Bearer $FORGEJO_TOKEN" | jq -r '.id // empty')
 
-          # create release
-          release_id=$(curl -s -X POST "$API/repos/$OWNER/$REPO/releases" \
-            -H "Authorization: Bearer $FORGEJO_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"draft\":false,\"prerelease\":false}" | jq -r '.id')
+          # create if missing
+          if [ -z "$release_id" ]; then
+            release_id=$(curl -sf -X POST "$API/repos/$OWNER/$REPO/releases" \
+              -H "Authorization: Bearer $FORGEJO_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"draft\":false,\"prerelease\":false}" | jq -r '.id // empty')
+          fi
 
-          if [ "$release_id" = "null" ] || [ -z "$release_id" ]; then
-            echo "Failed to create release"
+          if [ -z "$release_id" ]; then
+            echo "Could not create or find Forgejo release for $TAG"
             exit 1
           fi
 
-          # upload assets
+          # upload all assets (Linux, Windows, plus macOS if downloaded)
           for f in artifacts/*; do
             [ ! -f "$f" ] && continue
             filename=$(basename "$f")
             echo "Uploading $filename to Forgejo release $release_id"
-            curl -s -X POST "$API/repos/$OWNER/$REPO/releases/$release_id/assets" \
+            curl -sf -X POST "$API/repos/$OWNER/$REPO/releases/$release_id/assets" \
               -H "Authorization: Bearer $FORGEJO_TOKEN" \
-              -F "attachment=@$f" > /dev/null
+              -F "attachment=@$f" > /dev/null 2>&1 || echo "Upload skipped (may already exist): $filename"
           done
 
-          echo "Forgejo release $TAG created with $(find artifacts -type f | wc -l) assets"
+          echo "Forgejo release $TAG populated with $(find artifacts -type f | wc -l) assets"
 
       - name: Upload Linux + Windows binaries to GitHub Release
-        if: secrets.GH_PAT != ''
+        if: secrets.ACTION_TOKEN_GITHUB != ''
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.ACTION_TOKEN_GITHUB }}
         run: |
           TAG="v${{ needs.detect.outputs.version }}"
           for f in artifacts/*; do
