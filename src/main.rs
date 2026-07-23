@@ -345,7 +345,7 @@ fn update_tui() -> anyhow::Result<()> {
     install_deps_tui()?;
     println!("Updating Starling TUI...");
     let status = std::process::Command::new("cargo")
-        .args(["install", "--jobs", "2", "starling-tui", "--git",
+        .args(["install", "--jobs", "2", "--git",
             "https://forgejo.hearthhome.lol/Saltfault/Starling-TUI.git"])
         .status()
         .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
@@ -361,7 +361,7 @@ fn update_server() -> anyhow::Result<()> {
     install_deps_server()?;
     println!("Updating Starling Server...");
     let status = std::process::Command::new("cargo")
-        .args(["install", "--jobs", "2", "starling-server", "--git",
+        .args(["install", "--jobs", "2", "--git",
             "https://forgejo.hearthhome.lol/Saltfault/Starling-Server.git"])
         .status()
         .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
