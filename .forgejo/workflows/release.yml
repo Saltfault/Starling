@@ -71,13 +71,13 @@ jobs:
           set -e
           targets=(
             "x86_64-unknown-linux-gnu"
-            "i686-unknown-linux-gnu:gcc:i686-linux-gnu-gcc"
-            "aarch64-unknown-linux-gnu:gcc:aarch64-linux-gnu-gcc"
-            "x86_64-pc-windows-gnu:x86_64-w64-mingw32-gcc:x86_64-w64-mingw32-gcc"
-            "i686-pc-windows-gnu:i686-w64-mingw32-gcc:i686-w64-mingw32-gcc"
+            "i686-unknown-linux-gnu:i686-linux-gnu-gcc"
+            "aarch64-unknown-linux-gnu:aarch64-linux-gnu-gcc"
+            "x86_64-pc-windows-gnu:x86_64-w64-mingw32-gcc"
+            "i686-pc-windows-gnu:i686-w64-mingw32-gcc"
           )
           for entry in "${targets[@]}"; do
-            IFS=':' read -r target pkg linker <<< "$entry"
+            IFS=':' read -r target linker <<< "$entry"
             echo "=== Building $target ==="
             rustup target add "$target"
             if [ -n "$linker" ]; then
@@ -89,22 +89,21 @@ jobs:
             [[ "$target" == *-windows-* ]] && ext=".exe"
             cp "target/$target/release/starling$ext" "starling-$target$ext"
           done
-          ls -la starling-*
 
-      - name: Download macOS from Linux + Windows from GitHub Release
+      - name: Download macOS from GitHub Release
         env:
           GH_TOKEN: ${{ secrets.ACTION_TOKEN_GITHUB }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
-            echo "ACTION_TOKEN_GITHUB not set, skipping GitHub download"
+            echo "ACTION_TOKEN_GITHUB not set, skipping macOS download"
             exit 0
           fi
           TAG="v${{ needs.detect.outputs.version }}"
-          for i in $(seq 1 30); do
+          for i in $(seq 1 60); do
             assets=$(curl -s "https://api.github.com/repos/Saltfault/Starling/releases/tags/$TAG" \
               -H "Authorization: Bearer $GH_TOKEN" | jq -r '.assets[]?.browser_download_url // empty')
             if [ -n "$assets" ]; then break; fi
-            echo "GitHub release not ready yet, retry $i/30..."
+            echo "GitHub release not ready yet, retry $i/60..."
             sleep 30
           done
           if [ -z "$assets" ]; then
@@ -113,11 +112,10 @@ jobs:
           fi
           echo "$assets" | while read url; do
             [ -z "$url" ] && continue
-            echo "Downloading $(basename $url) from $url"
-            curl -sSL -o "$(basename $url)" "$url" -w " HTTP %{http_code}" || echo "Download failed"
+            file=$(basename "$url")
+            echo "Downloading $file"
+            curl -sSL -o "$file" "$url"
           done
-          count=$(find . -maxdepth 1 -name '*-darwin' -type f | wc -l)
-          echo "Downloaded $count macOS files"
 
       - name: Create Forgejo Release
         env:
@@ -127,10 +125,10 @@ jobs:
           OWNER="${GITHUB_REPOSITORY_OWNER}"
           REPO="${GITHUB_REPOSITORY#*/}"
           API="https://${GITHUB_SERVER_URL#https://}/api/v1"
+
           mkdir -p artifacts
           mv starling-* artifacts/ 2>/dev/null || true
 
-          # delete existing tag+release so we can recreate cleanly
           curl -s -X DELETE "$API/repos/$OWNER/$REPO/releases/tags/$TAG" \
             -H "Authorization: Bearer $FORGEJO_TOKEN" > /dev/null 2>&1
 
@@ -146,48 +144,10 @@ jobs:
 
           for f in artifacts/*; do
             [ ! -f "$f" ] && continue
-            filename=$(basename "$f")
-            echo "Uploading $filename"
+            echo "Uploading $(basename $f)"
             curl -s -X POST "$API/repos/$OWNER/$REPO/releases/$release_id/assets" \
               -H "Authorization: Bearer $FORGEJO_TOKEN" \
-              -F "attachment=@$f" > /dev/null 2>&1 || echo "Upload failed for $filename"
+              -F "attachment=@$f" > /dev/null 2>&1 || echo "Upload failed for $(basename $f)"
           done
 
-          echo "Forgejo release $TAG created with $(find artifacts -type f | wc -l) assets"
-
-      - name: Upload all binaries to GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.ACTION_TOKEN_GITHUB }}
-        run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "ACTION_TOKEN_GITHUB not set, skipping GitHub upload"
-            exit 0
-          fi
-          TAG="v${{ needs.detect.outputs.version }}"
-          for i in $(seq 1 30); do
-            release_id=$(curl -s "https://api.github.com/repos/Saltfault/Starling/releases/tags/$TAG" \
-              -H "Authorization: Bearer $GH_TOKEN" | jq -r '.id // empty')
-            if [ -n "$release_id" ]; then break; fi
-            echo "GitHub release not ready, retry $i/30..."
-            sleep 30
-          done
-          if [ -z "$release_id" ]; then
-            echo "GitHub release $TAG does not exist after retries"
-            exit 0
-          fi
-          existing_assets=$(curl -s "https://api.github.com/repos/Saltfault/Starling/releases/$release_id/assets" \
-            -H "Authorization: Bearer $GH_TOKEN" | jq -r '.[].name // empty')
-          for f in artifacts/*; do
-            [ ! -f "$f" ] && continue
-            filename=$(basename "$f")
-            if echo "$existing_assets" | grep -qx "$filename"; then
-              echo "Skipping $filename (already in release)"
-              continue
-            fi
-            echo "Uploading $filename to GitHub release"
-            curl -s -X POST "https://uploads.github.com/repos/Saltfault/Starling/releases/$release_id/assets?name=$filename" \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary "@$f" > /dev/null 2>&1 || echo "Upload failed for $filename"
-          done
-          echo "GitHub Release supplemented"
+          echo "Forgejo release $TAG created with $(ls -1 artifacts | wc -l) assets"
