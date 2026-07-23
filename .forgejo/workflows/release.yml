@@ -40,7 +40,6 @@ jobs:
           echo "skip=false" >> "$GITHUB_OUTPUT"
       - name: Run tests
         if: steps.check.outputs.skip == 'false'
-        shell: bash
         run: cargo test --all-features
 
   build:
@@ -55,17 +54,13 @@ jobs:
             os: ubuntu-latest
           - target: i686-unknown-linux-gnu
             os: ubuntu-latest
-            cross: true
-            cross_pkg: gcc-multilib
+            cross_pkg: gcc-i686-linux-gnu
+            linker: i686-linux-gnu-gcc
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            cross: true
             cross_pkg: gcc-aarch64-linux-gnu
+            linker: aarch64-linux-gnu-gcc
           - target: x86_64-pc-windows-msvc
-            os: windows-latest
-          - target: i686-pc-windows-msvc
-            os: windows-latest
-          - target: aarch64-pc-windows-msvc
             os: windows-latest
     steps:
       - uses: actions/checkout@v6
@@ -74,11 +69,16 @@ jobs:
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-      - name: Install cross-compilation tools
-        if: matrix.cross
+      - name: Install cross-compilation packages
+        if: matrix.cross_pkg
+        shell: bash
+        run: apt-get update && apt-get install -y ${{ matrix.cross_pkg }}
+      - name: Set cross-linker
+        if: matrix.linker
         shell: bash
         run: |
-          apt-get update && apt-get install -y ${{ matrix.cross_pkg }}
+          target_upper=$(echo ${{ matrix.target }} | tr '[:lower:]-' '[:upper:]_')
+          echo "CARGO_TARGET_${target_upper}_LINKER=${{ matrix.linker }}" >> $GITHUB_ENV
       - name: Add target
         shell: bash
         run: rustup target add ${{ matrix.target }}
@@ -92,7 +92,7 @@ jobs:
           [[ "${{ matrix.target }}" == *-windows-* ]] && ext=".exe"
           cp "target/${{ matrix.target }}/release/starling${ext}" "starling-${{ matrix.target }}${ext}"
       - name: Upload binary
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v3
         with:
           name: starling-${{ matrix.target }}
           path: starling-${{ matrix.target }}*
@@ -102,7 +102,7 @@ jobs:
     if: needs.detect.outputs.skip == 'false'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v3
         with:
           path: artifacts
 
@@ -121,7 +121,6 @@ jobs:
           fi
           TAG="v${{ needs.detect.outputs.version }}"
           mkdir -p artifacts
-          # use curl to download all release assets via GitHub API
           assets=$(curl -sf "https://api.github.com/repos/Saltfault/Starling/releases/tags/$TAG" \
             -H "Authorization: Bearer $GH_TOKEN" | jq -r '.assets[]?.browser_download_url // empty')
           if [ -z "$assets" ]; then
@@ -142,11 +141,9 @@ jobs:
           REPO="${GITHUB_REPOSITORY#*/}"
           API="https://${GITHUB_SERVER_URL#https://}/api/v1"
 
-          # find existing release
           release_id=$(curl -sf "$API/repos/$OWNER/$REPO/releases/tags/$TAG" \
             -H "Authorization: Bearer $FORGEJO_TOKEN" | jq -r '.id // empty')
 
-          # create if missing
           if [ -z "$release_id" ]; then
             release_id=$(curl -sf -X POST "$API/repos/$OWNER/$REPO/releases" \
               -H "Authorization: Bearer $FORGEJO_TOKEN" \
@@ -159,7 +156,6 @@ jobs:
             exit 1
           fi
 
-          # upload all assets (Linux, Windows, plus macOS if downloaded)
           for f in artifacts/*; do
             [ ! -f "$f" ] && continue
             filename=$(basename "$f")
@@ -171,7 +167,7 @@ jobs:
 
           echo "Forgejo release $TAG populated with $(find artifacts -type f | wc -l) assets"
 
-      - name: Upload Linux + Windows binaries to GitHub Release
+      - name: Upload binaries to GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.ACTION_TOKEN_GITHUB }}
@@ -181,7 +177,6 @@ jobs:
             exit 0
           fi
           TAG="v${{ needs.detect.outputs.version }}"
-          # get release id for upload
           release_id=$(curl -sf "https://api.github.com/repos/Saltfault/Starling/releases/tags/$TAG" \
             -H "Authorization: Bearer $GH_TOKEN" | jq -r '.id // empty')
           if [ -z "$release_id" ]; then
