@@ -84,6 +84,63 @@ jobs:
           files: artifacts/**/*
           generate_release_notes: true
 
+      - name: Download Linux + Windows from Forgejo Release
+        shell: bash
+        env:
+          FORGEJO_TOKEN: ${{ secrets.ACTION_TOKEN_FORGEJO }}
+        run: |
+          if [ -z "$FORGEJO_TOKEN" ]; then
+            echo "ACTION_TOKEN_FORGEJO not set, skipping Forgejo download"
+            exit 0
+          fi
+          TAG="v${{ needs.detect.outputs.version }}"
+          API="https://forgejo.hearthhome.lol/api/v1"
+          for i in 1 2 3 4 5; do
+            assets=$(curl -s "$API/repos/Saltfault/Starling/releases/tags/$TAG" \
+              -H "Authorization: Bearer $FORGEJO_TOKEN" | jq -r '.assets[]?.browser_download_url // empty')
+            if [ -n "$assets" ]; then break; fi
+            echo "Forgejo release not ready yet, retry $i/5..."
+            sleep 30
+          done
+          if [ -z "$assets" ]; then
+            echo "Forgejo release not found after retries, skipping"
+            exit 0
+          fi
+          echo "$assets" | while read url; do
+            curl -sL -o "artifacts/$(basename $url)" "$url"
+          done
+          echo "Downloaded $(echo "$assets" | wc -l) assets from Forgejo"
+
+      - name: Upload supplemental binaries to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ needs.detect.outputs.version }}"
+          release_id=$(curl -s "https://api.github.com/repos/Saltfault/Starling/releases/tags/$TAG" \
+            -H "Authorization: Bearer $GH_TOKEN" | jq -r '.id // empty')
+          if [ -z "$release_id" ]; then
+            echo "GitHub release not found, cannot supplement"
+            exit 1
+          fi
+          for f in artifacts/*; do
+            [ ! -f "$f" ] && continue
+            filename=$(basename "$f")
+            # skip if already uploaded (macOS files from first step)
+            existing=$(curl -s "https://api.github.com/repos/Saltfault/Starling/releases/$release_id/assets" \
+              -H "Authorization: Bearer $GH_TOKEN" | jq -r '.[] | select(.name == "'"$filename"'") | .id // empty')
+            if [ -n "$existing" ]; then
+              echo "Skipping $filename (already in release)"
+              continue
+            fi
+            echo "Uploading $filename to GitHub release $release_id"
+            curl -s -X POST "https://uploads.github.com/repos/Saltfault/Starling/releases/$release_id/assets?name=$filename" \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@$f" > /dev/null 2>&1 || echo "Upload failed for $filename"
+          done
+          echo "GitHub Release supplemented"
+
       - name: Upload macOS binaries to Forgejo Release
         shell: bash
         env:
@@ -95,34 +152,38 @@ jobs:
           fi
           TAG="v${{ needs.detect.outputs.version }}"
           API="https://forgejo.hearthhome.lol/api/v1"
-          OWNER="Saltfault"
-          REPO="Starling"
 
-          # find existing release
-          release_id=$(curl -s "$API/repos/$OWNER/$REPO/releases/tags/$TAG" \
-            -H "Authorization: Bearer $FORGEJO_TOKEN" | jq -r '.id // empty')
-
-          # create if missing
-          if [ -z "$release_id" ]; then
-            release_id=$(curl -s -X POST "$API/repos/$OWNER/$REPO/releases" \
+          for i in 1 2 3 4 5; do
+            release_id=$(curl -s "$API/repos/Saltfault/Starling/releases/tags/$TAG" \
+              -H "Authorization: Bearer $FORGEJO_TOKEN" | jq -r '.id // empty')
+            if [ -n "$release_id" ]; then break; fi
+            release_id=$(curl -s -X POST "$API/repos/Saltfault/Starling/releases" \
               -H "Authorization: Bearer $FORGEJO_TOKEN" \
               -H "Content-Type: application/json" \
               -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"draft\":false,\"prerelease\":false}" | jq -r '.id // empty')
-          fi
+            if [ -n "$release_id" ]; then break; fi
+            echo "Forgejo release not ready, retry $i/5..."
+            sleep 30
+          done
 
           if [ -z "$release_id" ]; then
             echo "Could not create or find Forgejo release for $TAG"
             exit 1
           fi
 
-          # upload macOS assets
           for f in artifacts/*; do
             [ ! -f "$f" ] && continue
             filename=$(basename "$f")
+            existing=$(curl -s "$API/repos/Saltfault/Starling/releases/$release_id/assets" \
+              -H "Authorization: Bearer $FORGEJO_TOKEN" | jq -r '.[] | select(.name == "'"$filename"'") | .id // empty')
+            if [ -n "$existing" ]; then
+              echo "Skipping $filename (already in forgejo release)"
+              continue
+            fi
             echo "Uploading $filename to Forgejo release $release_id"
-            curl -s -X POST "$API/repos/$OWNER/$REPO/releases/$release_id/assets" \
+            curl -s -X POST "$API/repos/Saltfault/Starling/releases/$release_id/assets" \
               -H "Authorization: Bearer $FORGEJO_TOKEN" \
-              -F "attachment=@$f" > /dev/null 2>&1 || echo "Upload skipped (may already exist): $filename"
+              -F "attachment=@$f" > /dev/null 2>&1 || echo "Upload failed for $filename"
           done
 
           echo "macOS binaries uploaded to Forgejo release $TAG"

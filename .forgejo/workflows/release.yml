@@ -129,10 +129,15 @@ jobs:
           fi
           TAG="v${{ needs.detect.outputs.version }}"
           mkdir -p artifacts
-          assets=$(curl -s "https://api.github.com/repos/Saltfault/Starling/releases/tags/$TAG" \
-            -H "Authorization: Bearer $GH_TOKEN" | jq -r '.assets[]?.browser_download_url // empty')
+          for i in 1 2 3 4 5; do
+            assets=$(curl -s "https://api.github.com/repos/Saltfault/Starling/releases/tags/$TAG" \
+              -H "Authorization: Bearer $GH_TOKEN" | jq -r '.assets[]?.browser_download_url // empty')
+            if [ -n "$assets" ]; then break; fi
+            echo "GitHub release not ready yet, retry $i/5..."
+            sleep 30
+          done
           if [ -z "$assets" ]; then
-            echo "macOS binaries not yet available on GitHub"
+            echo "macOS binaries not yet available on GitHub after retries"
             exit 0
           fi
           echo "$assets" | while read url; do
@@ -164,13 +169,20 @@ jobs:
             exit 1
           fi
 
+          existing_assets=$(curl -s "$API/repos/$OWNER/$REPO/releases/$release_id/assets" \
+            -H "Authorization: Bearer $FORGEJO_TOKEN" | jq -r '.[].name // empty')
+
           for f in artifacts/*; do
             [ ! -f "$f" ] && continue
             filename=$(basename "$f")
+            if echo "$existing_assets" | grep -qx "$filename"; then
+              echo "Skipping $filename (already in forgejo release)"
+              continue
+            fi
             echo "Uploading $filename to Forgejo release $release_id"
-            curl -sf -X POST "$API/repos/$OWNER/$REPO/releases/$release_id/assets" \
+            curl -s -X POST "$API/repos/$OWNER/$REPO/releases/$release_id/assets" \
               -H "Authorization: Bearer $FORGEJO_TOKEN" \
-              -F "attachment=@$f" > /dev/null 2>&1 || echo "Upload skipped (may already exist): $filename"
+              -F "attachment=@$f" > /dev/null 2>&1 || echo "Upload failed for $filename"
           done
 
           echo "Forgejo release $TAG populated with $(find artifacts -type f | wc -l) assets"
@@ -185,19 +197,30 @@ jobs:
             exit 0
           fi
           TAG="v${{ needs.detect.outputs.version }}"
-          release_id=$(curl -s "https://api.github.com/repos/Saltfault/Starling/releases/tags/$TAG" \
-            -H "Authorization: Bearer $GH_TOKEN" | jq -r '.id // empty')
+          for i in 1 2 3 4 5; do
+            release_id=$(curl -s "https://api.github.com/repos/Saltfault/Starling/releases/tags/$TAG" \
+              -H "Authorization: Bearer $GH_TOKEN" | jq -r '.id // empty')
+            if [ -n "$release_id" ]; then break; fi
+            echo "GitHub release not ready, retry $i/5..."
+            sleep 30
+          done
           if [ -z "$release_id" ]; then
-            echo "GitHub release $TAG does not exist yet, skipping"
+            echo "GitHub release $TAG does not exist yet after retries, skipping"
             exit 0
           fi
+          existing_assets=$(curl -s "https://api.github.com/repos/Saltfault/Starling/releases/$release_id/assets" \
+            -H "Authorization: Bearer $GH_TOKEN" | jq -r '.[].name // empty')
           for f in artifacts/*; do
             [ ! -f "$f" ] && continue
             filename=$(basename "$f")
+            if echo "$existing_assets" | grep -qx "$filename"; then
+              echo "Skipping $filename (already in GitHub release)"
+              continue
+            fi
             echo "Uploading $filename to GitHub release $release_id"
-            curl -sf -X POST "https://uploads.github.com/repos/Saltfault/Starling/releases/$release_id/assets?name=$filename" \
+            curl -s -X POST "https://uploads.github.com/repos/Saltfault/Starling/releases/$release_id/assets?name=$filename" \
               -H "Authorization: Bearer $GH_TOKEN" \
               -H "Content-Type: application/octet-stream" \
-              --data-binary "@$f" > /dev/null 2>&1 || echo "Upload skipped (may already exist): $filename"
+              --data-binary "@$f" > /dev/null 2>&1 || echo "Upload failed for $filename"
           done
           echo "GitHub Release supplemented with $(find artifacts -type f | wc -l) assets"
