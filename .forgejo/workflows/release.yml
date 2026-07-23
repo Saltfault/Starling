@@ -112,9 +112,12 @@ jobs:
             exit 0
           fi
           echo "$assets" | while read url; do
-            curl -sL -o "$(basename $url)" "$url"
+            [ -z "$url" ] && continue
+            echo "Downloading $(basename $url) from $url"
+            curl -sSL -o "$(basename $url)" "$url" -w " HTTP %{http_code}" || echo "Download failed"
           done
-          ls -la *.darwin
+          count=$(find . -maxdepth 1 -name '*-darwin' -type f | wc -l)
+          echo "Downloaded $count macOS files"
 
       - name: Create Forgejo Release
         env:
