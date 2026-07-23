@@ -327,18 +327,40 @@ fn install_deps_server() -> anyhow::Result<()> {
 }
 
 fn update_self() -> anyhow::Result<()> {
-    println!("Updating Starling...");
-    let status = std::process::Command::new("cargo")
-        .args(["install", "--jobs", "2", "--git",
-            "https://forgejo.hearthhome.lol/Saltfault/Starling.git"])
-        .status()
-        .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
-    if status.success() {
-        println!("✓ Starling updated to the latest version");
-    } else {
-        anyhow::bail!("update failed (exit code: {:?})", status.code());
+    // On Windows we must move the running exe aside so cargo can write the
+    // replacement.  We restore the backup if the install fails.
+    #[cfg(windows)]
+    let backup = std::env::current_exe().ok().and_then(|exe| {
+        let bak = exe.with_extension("exe.old");
+        std::fs::rename(&exe, &bak).ok().map(|_| (bak, exe))
+    });
+
+    let result = (|| -> anyhow::Result<()> {
+        println!("Updating Starling...");
+        let status = std::process::Command::new("cargo")
+            .args(["install", "--jobs", "2", "--git",
+                "https://forgejo.hearthhome.lol/Saltfault/Starling.git"])
+            .status()
+            .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
+        if status.success() {
+            println!("✓ Starling updated to the latest version");
+            Ok(())
+        } else {
+            anyhow::bail!("update failed (exit code: {:?})", status.code());
+        }
+    })();
+
+    #[cfg(windows)]
+    if let Some((bak, exe)) = &backup {
+        if result.is_ok() {
+            let _ = std::fs::remove_file(bak);
+        } else {
+            // restore the original binary so the user isn't left stranded
+            let _ = std::fs::rename(bak, exe);
+        }
     }
-    Ok(())
+
+    result
 }
 
 fn update_tui() -> anyhow::Result<()> {
