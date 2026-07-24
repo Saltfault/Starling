@@ -43,6 +43,7 @@ pub struct TypedCode {
 pub struct FlockCode {
     pub secret: [u8; 32],
     pub opener: EndpointId,
+    pub name: String,
 }
 
 pub fn encode_typed_code(code_type: CodeType, payload: &[u8]) -> String {
@@ -77,21 +78,37 @@ pub fn decode_typed_code(code: &str) -> Option<TypedCode> {
     })
 }
 
-pub fn encode_flock_code(secret: &[u8; 32], opener: &EndpointId) -> String {
-    let mut payload = Vec::with_capacity(64);
+pub fn encode_flock_code(secret: &[u8; 32], opener: &EndpointId, name: &str) -> String {
+    let mut name_len = name.len().min(64);
+    while !name.is_char_boundary(name_len) {
+        name_len -= 1;
+    }
+    let mut payload = Vec::with_capacity(64 + name_len);
     payload.extend_from_slice(secret);
     payload.extend_from_slice(opener.as_bytes());
+    payload.extend_from_slice(&name.as_bytes()[..name_len]);
     encode_typed_code(CodeType::Flock, &payload)
 }
 
 pub fn decode_flock_code(code: &TypedCode) -> Option<FlockCode> {
-    if code.code_type != CodeType::Flock || code.payload.len() != 64 {
+    if code.code_type != CodeType::Flock || !(65..=128).contains(&code.payload.len()) {
         return None;
     }
     let secret = code.payload[..32].try_into().ok()?;
-    let opener_bytes: [u8; 32] = code.payload[32..].try_into().ok()?;
+    let opener_bytes: [u8; 32] = code.payload[32..64].try_into().ok()?;
     let opener = EndpointId::from_bytes(&opener_bytes).ok()?;
-    Some(FlockCode { secret, opener })
+    let name = std::str::from_utf8(&code.payload[64..])
+        .ok()?
+        .trim()
+        .to_string();
+    if name.is_empty() {
+        return None;
+    }
+    Some(FlockCode {
+        secret,
+        opener,
+        name,
+    })
 }
 
 pub fn encode_roost_code(node_id: &EndpointId) -> String {
@@ -169,11 +186,12 @@ mod tests {
     fn flock_codes_carry_a_secret_and_opener() {
         let opener = iroh::SecretKey::generate().public();
         let secret = [42; 32];
-        let encoded = encode_flock_code(&secret, &opener);
+        let encoded = encode_flock_code(&secret, &opener, "Night Birds");
         let typed = decode_typed_code(&encoded).expect("typed flock code");
         let decoded = decode_flock_code(&typed).expect("flock payload");
 
         assert_eq!(decoded.secret, secret);
         assert_eq!(decoded.opener, opener);
+        assert_eq!(decoded.name, "Night Birds");
     }
 }
