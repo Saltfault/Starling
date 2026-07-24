@@ -239,13 +239,13 @@ fn install_linux_deps(packages: &[&str], extra_wsl: Option<&[&str]>) -> anyhow::
     if std::process::Command::new("apt-get").arg("--version").output().is_ok() {
         println!("Detected Debian/Ubuntu/WSL — installing...");
         run_shell("sudo", &["apt-get", "update"])?;
-        let mut apt = vec!["install", "-y"];
+        let mut apt = vec!["apt-get", "install", "-y"];
         apt.extend(packages);
         run_shell("sudo", &apt)?;
         if let Some(wsl_pkgs) = extra_wsl {
             if std::path::Path::new("/mnt/wslg").exists() && !std::path::Path::new("/etc/asound.conf").exists() {
                 println!("Setting up WSL2 audio bridge...");
-                let mut wsl = vec!["install", "-y"];
+                let mut wsl = vec!["apt-get", "install", "-y"];
                 wsl.extend(wsl_pkgs);
                 run_shell("sudo", &wsl)?;
                 let conf = "pcm.!default {\ntype pulse\n}\nctl.!default {\ntype pulse\n}\n";
@@ -255,9 +255,9 @@ fn install_linux_deps(packages: &[&str], extra_wsl: Option<&[&str]>) -> anyhow::
         }
     } else if std::process::Command::new("dnf").arg("--version").output().is_ok() {
         println!("Detected Fedora — installing...");
-        let mut dnf = vec!["install", "-y"];
+        let mut dnf = vec!["dnf", "install", "-y"];
         dnf.extend(packages);
-        run_shell("sudo", &["dnf", "install", "-y"])?;
+        run_shell("sudo", &dnf)?;
     } else if std::process::Command::new("pacman").arg("--version").output().is_ok() {
         println!("Detected Arch — installing...");
         let mut pac = vec!["-S", "--noconfirm"];
