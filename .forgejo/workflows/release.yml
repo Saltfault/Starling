@@ -75,6 +75,7 @@ jobs:
       - name: Build all targets
         run: |
           set -e
+          export PKG_CONFIG_ALLOW_CROSS=1
           targets=(
             "x86_64-unknown-linux-gnu"
             "x86_64-unknown-linux-musl:musl-gcc"
