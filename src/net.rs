@@ -1,6 +1,6 @@
 use crate::crypto::FlockCrypto;
 use crate::event::GossipPayload;
-use data_encoding::BASE32_NOPAD;
+use data_encoding::HEXUPPER;
 use iroh::EndpointId;
 use iroh_gossip::proto::TopicId;
 use sha2::{Digest, Sha256};
@@ -39,6 +39,12 @@ pub struct TypedCode {
     pub payload: Vec<u8>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FlockCode {
+    pub secret: [u8; 32],
+    pub opener: EndpointId,
+}
+
 pub fn encode_typed_code(code_type: CodeType, payload: &[u8]) -> String {
     let tag = match code_type {
         CodeType::Flock => 0,
@@ -47,7 +53,7 @@ pub fn encode_typed_code(code_type: CodeType, payload: &[u8]) -> String {
     let mut bytes = Vec::with_capacity(payload.len() + 1);
     bytes.push(tag);
     bytes.extend_from_slice(payload);
-    BASE32_NOPAD.encode(&bytes)
+    HEXUPPER.encode(&bytes)
 }
 
 pub fn decode_typed_code(code: &str) -> Option<TypedCode> {
@@ -55,7 +61,7 @@ pub fn decode_typed_code(code: &str) -> Option<TypedCode> {
     if normalized.is_empty() || normalized.contains('-') {
         return None;
     }
-    let bytes = BASE32_NOPAD.decode(normalized.as_bytes()).ok()?;
+    let bytes = HEXUPPER.decode(normalized.as_bytes()).ok()?;
     let (&tag, payload) = bytes.split_first()?;
     if payload.is_empty() {
         return None;
@@ -71,8 +77,21 @@ pub fn decode_typed_code(code: &str) -> Option<TypedCode> {
     })
 }
 
-pub fn encode_flock_code(payload: &[u8]) -> String {
-    encode_typed_code(CodeType::Flock, payload)
+pub fn encode_flock_code(secret: &[u8; 32], opener: &EndpointId) -> String {
+    let mut payload = Vec::with_capacity(64);
+    payload.extend_from_slice(secret);
+    payload.extend_from_slice(opener.as_bytes());
+    encode_typed_code(CodeType::Flock, &payload)
+}
+
+pub fn decode_flock_code(code: &TypedCode) -> Option<FlockCode> {
+    if code.code_type != CodeType::Flock || code.payload.len() != 64 {
+        return None;
+    }
+    let secret = code.payload[..32].try_into().ok()?;
+    let opener_bytes: [u8; 32] = code.payload[32..].try_into().ok()?;
+    let opener = EndpointId::from_bytes(&opener_bytes).ok()?;
+    Some(FlockCode { secret, opener })
 }
 
 pub fn encode_roost_code(node_id: &EndpointId) -> String {
@@ -80,6 +99,9 @@ pub fn encode_roost_code(node_id: &EndpointId) -> String {
 }
 
 pub fn typed_code_node_id(code: &TypedCode) -> Option<EndpointId> {
+    if code.code_type != CodeType::Roost {
+        return None;
+    }
     let bytes: [u8; 32] = code.payload.as_slice().try_into().ok()?;
     EndpointId::from_bytes(&bytes).ok()
 }
@@ -122,13 +144,15 @@ pub async fn broadcast_payload(
 
 #[cfg(test)]
 mod tests {
-    use super::{CodeType, decode_typed_code, encode_typed_code};
+    use super::{
+        CodeType, decode_flock_code, decode_typed_code, encode_flock_code, encode_typed_code,
+    };
 
     #[test]
     fn typed_codes_round_trip_without_separators() {
         for code_type in [CodeType::Flock, CodeType::Roost] {
             let encoded = encode_typed_code(code_type, &[1, 2, 3, 4, 5]);
-            assert!(!encoded.contains('-'));
+            assert!(encoded.bytes().all(|byte| byte.is_ascii_hexdigit()));
             let decoded = decode_typed_code(&encoded).expect("valid typed code");
             assert_eq!(decoded.code_type, code_type);
             assert_eq!(decoded.payload, [1, 2, 3, 4, 5]);
@@ -137,7 +161,19 @@ mod tests {
 
     #[test]
     fn typed_codes_reject_unknown_tags_and_empty_payloads() {
-        assert!(decode_typed_code("AA").is_none());
-        assert!(decode_typed_code("7YAA").is_none());
+        assert!(decode_typed_code("00").is_none());
+        assert!(decode_typed_code("FF00").is_none());
+    }
+
+    #[test]
+    fn flock_codes_carry_a_secret_and_opener() {
+        let opener = iroh::SecretKey::generate().public();
+        let secret = [42; 32];
+        let encoded = encode_flock_code(&secret, &opener);
+        let typed = decode_typed_code(&encoded).expect("typed flock code");
+        let decoded = decode_flock_code(&typed).expect("flock payload");
+
+        assert_eq!(decoded.secret, secret);
+        assert_eq!(decoded.opener, opener);
     }
 }
