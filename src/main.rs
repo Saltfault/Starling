@@ -187,8 +187,14 @@ fn config_dir() -> std::path::PathBuf {
 }
 
 fn cargo_install(url: &str) -> anyhow::Result<()> {
-    let status = std::process::Command::new("cargo")
-        .args(["install", "--jobs", "2", "--git", url])
+    let mut command = std::process::Command::new("cargo");
+    command.args(["install", "--jobs", "2", "--git", url]);
+    if url == URL_TUI {
+        command.args(["--features", "audio,video"]);
+    } else if url == URL_SERVER {
+        command.arg("--no-default-features");
+    }
+    let status = command
         .status()
         .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
     if status.success() {
@@ -340,9 +346,9 @@ fn install_deps_tui() -> anyhow::Result<()> {
 
 fn install_deps_server() -> anyhow::Result<()> {
     if cfg!(target_os = "linux") {
-        let r = install_linux_deps(&["build-essential", "pkg-config", "libclang-dev"], None);
+        let r = install_linux_deps(&["build-essential", "pkg-config"], None);
         if let Err(e) = r {
-            eprintln!("Please install manually: gcc, pkg-config, libclang-dev");
+            eprintln!("Please install manually: gcc, pkg-config");
             return Err(e);
         }
     } else if cfg!(target_os = "macos") {
