@@ -3,6 +3,14 @@ use serde::{Deserialize, Serialize};
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 
+pub const DEFAULT_TEXT_COLOR: &str = "#CFD6D2";
+pub const DEFAULT_BG_COLOR: &str = "";
+pub const DEFAULT_BORDER_COLOR: &str = "#333B37";
+pub const DEFAULT_ACCENT_COLOR: &str = "#6FAE9D";
+pub const DEFAULT_AUTHOR_COLOR: &str = "#F48A52";
+pub const DEFAULT_SELECTION_COLOR: &str = "#E0D267";
+pub const DEFAULT_DIM_COLOR: &str = "#5F6862";
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Profile {
     pub name: String,
@@ -12,6 +20,36 @@ pub struct Profile {
     pub text_color: String,
     pub bg_color: String,
     pub border_color: String,
+    pub accent_color: String,
+    pub author_color: String,
+    pub selection_color: String,
+    pub dim_color: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct LegacyProfile {
+    name: String,
+    pronouns: String,
+    input_device: Option<String>,
+    output_device: Option<String>,
+    text_color: String,
+    bg_color: String,
+    border_color: String,
+}
+
+impl From<LegacyProfile> for Profile {
+    fn from(legacy: LegacyProfile) -> Self {
+        Self {
+            name: legacy.name,
+            pronouns: legacy.pronouns,
+            input_device: legacy.input_device,
+            output_device: legacy.output_device,
+            text_color: legacy.text_color,
+            bg_color: legacy.bg_color,
+            border_color: legacy.border_color,
+            ..Self::default()
+        }
+    }
 }
 
 impl Default for Profile {
@@ -21,9 +59,13 @@ impl Default for Profile {
             pronouns: String::new(),
             input_device: None,
             output_device: None,
-            text_color: "#CFD6D2".into(),
-            bg_color: String::new(),
-            border_color: "#333B37".into(),
+            text_color: DEFAULT_TEXT_COLOR.into(),
+            bg_color: DEFAULT_BG_COLOR.into(),
+            border_color: DEFAULT_BORDER_COLOR.into(),
+            accent_color: DEFAULT_ACCENT_COLOR.into(),
+            author_color: DEFAULT_AUTHOR_COLOR.into(),
+            selection_color: DEFAULT_SELECTION_COLOR.into(),
+            dim_color: DEFAULT_DIM_COLOR.into(),
         }
     }
 }
@@ -57,6 +99,7 @@ impl Profile {
         let data = std::fs::read(&path)
             .with_context(|| format!("failed to read profile at {}", path.display()))?;
         postcard::from_bytes(&data)
+            .or_else(|_| postcard::from_bytes::<LegacyProfile>(&data).map(Profile::from))
             .with_context(|| format!("profile at {} is invalid", path.display()))
     }
 
@@ -163,7 +206,52 @@ fn create_secret_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::Profile;
+    use super::{
+        DEFAULT_ACCENT_COLOR, DEFAULT_AUTHOR_COLOR, DEFAULT_DIM_COLOR, DEFAULT_SELECTION_COLOR,
+        LegacyProfile, Profile,
+    };
+
+    #[test]
+    fn legacy_profile_uses_default_palette() {
+        let legacy = LegacyProfile {
+            name: "Bird".into(),
+            pronouns: "they/them".into(),
+            input_device: None,
+            output_device: None,
+            text_color: "#010203".into(),
+            bg_color: String::new(),
+            border_color: "#040506".into(),
+        };
+        let data = postcard::to_stdvec(&legacy).expect("serialize legacy profile");
+        let profile = postcard::from_bytes::<Profile>(&data)
+            .or_else(|_| postcard::from_bytes::<LegacyProfile>(&data).map(Profile::from))
+            .expect("migrate legacy profile");
+
+        assert_eq!(profile.text_color, "#010203");
+        assert_eq!(profile.border_color, "#040506");
+        assert_eq!(profile.accent_color, DEFAULT_ACCENT_COLOR);
+        assert_eq!(profile.author_color, DEFAULT_AUTHOR_COLOR);
+        assert_eq!(profile.selection_color, DEFAULT_SELECTION_COLOR);
+        assert_eq!(profile.dim_color, DEFAULT_DIM_COLOR);
+    }
+
+    #[test]
+    fn palette_fields_round_trip() {
+        let profile = Profile {
+            accent_color: "#010203".into(),
+            author_color: "#040506".into(),
+            selection_color: "#070809".into(),
+            dim_color: "#0A0B0C".into(),
+            ..Profile::default()
+        };
+        let data = postcard::to_stdvec(&profile).expect("serialize profile");
+        let decoded: Profile = postcard::from_bytes(&data).expect("deserialize profile");
+
+        assert_eq!(decoded.accent_color, profile.accent_color);
+        assert_eq!(decoded.author_color, profile.author_color);
+        assert_eq!(decoded.selection_color, profile.selection_color);
+        assert_eq!(decoded.dim_color, profile.dim_color);
+    }
 
     #[test]
     fn profile_code_truncates_on_utf8_boundary() {
