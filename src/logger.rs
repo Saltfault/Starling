@@ -6,10 +6,12 @@ use std::sync::OnceLock;
 use flate2::Compression;
 use flate2::write::GzEncoder;
 
+use crate::config::Profile;
+
 static LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 pub fn init() {
-    let log_dir = PathBuf::from("logs");
+    let log_dir = Profile::config_dir().join("logs");
     fs::create_dir_all(&log_dir).ok();
 
     let latest = log_dir.join("latest.log");
