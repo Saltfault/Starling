@@ -82,8 +82,6 @@ jobs:
             "i686-unknown-linux-gnu:i686-linux-gnu-gcc"
             "aarch64-unknown-linux-gnu:aarch64-linux-gnu-gcc"
             "armv7-unknown-linux-gnueabihf:arm-linux-gnueabihf-gcc"
-            "x86_64-pc-windows-msvc:lld-link"
-            "i686-pc-windows-msvc:lld-link"
           )
           for entry in "${targets[@]}"; do
             IFS=':' read -r target linker <<< "$entry"
