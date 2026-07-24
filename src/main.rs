@@ -43,16 +43,12 @@ fn main() -> anyhow::Result<()> {
                 return Ok(());
             }
             let mut count = 0;
-            for entry in std::fs::read_dir(&roosts_dir).map_err(|e| {
-                eprintln!("Error reading roosts directory: {e}");
-                std::process::exit(1);
-            })? {
-                if let Ok(entry) = entry {
-                    if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                        let name = entry.file_name().to_string_lossy().to_string();
-                        println!("  roost: {name}");
-                        count += 1;
-                    }
+            for entry in std::fs::read_dir(&roosts_dir)? {
+                let entry = entry?;
+                if entry.file_type()?.is_dir() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    println!("  roost: {name}");
+                    count += 1;
                 }
             }
             if count == 0 {
@@ -98,7 +94,11 @@ fn main() -> anyhow::Result<()> {
             }
             println!();
             println!("System dependencies:");
-            if std::process::Command::new("cargo").arg("--version").output().is_ok() {
+            if std::process::Command::new("cargo")
+                .arg("--version")
+                .output()
+                .is_ok()
+            {
                 println!("  ✓ cargo installed");
             } else {
                 println!("  ✗ cargo not found — install Rust: https://rustup.rs");
@@ -106,8 +106,11 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Some("logs") => {
-            println!("Starling TUI logs:");
-            println!("  logs/latest.log  (in the working directory)");
+            println!("Starling logs:");
+            println!(
+                "  {}",
+                config_dir().join("logs").join("latest.log").display()
+            );
             Ok(())
         }
         Some("tui") => match args.get(2).map(String::as_str) {
@@ -166,19 +169,21 @@ fn exec(bin: &str, args: &[&str]) -> anyhow::Result<()> {
     let status = std::process::Command::new(bin)
         .args(args)
         .status()
-        .map_err(|e| anyhow::anyhow!("{bin} not found — run `starling install {}` first: {e}",
-            if bin == "starling-tui" { "tui" } else { "server" }))?;
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "{bin} not found — run `starling install {}` first: {e}",
+                if bin == "starling-tui" {
+                    "tui"
+                } else {
+                    "server"
+                }
+            )
+        })?;
     std::process::exit(status.code().unwrap_or(1));
 }
 
 fn config_dir() -> std::path::PathBuf {
-    if let Ok(home) = std::env::var("HOME") {
-        std::path::PathBuf::from(home).join(".config").join("starling")
-    } else if let Ok(appdata) = std::env::var("APPDATA") {
-        std::path::PathBuf::from(appdata).join("starling")
-    } else {
-        std::path::PathBuf::from(".starling")
-    }
+    starling::config::Profile::config_dir()
 }
 
 fn cargo_install(url: &str) -> anyhow::Result<()> {
@@ -186,8 +191,11 @@ fn cargo_install(url: &str) -> anyhow::Result<()> {
         .args(["install", "--jobs", "2", "--git", url])
         .status()
         .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
-    if status.success() { Ok(()) }
-    else { anyhow::bail!("cargo install failed (exit code: {:?})", status.code()) }
+    if status.success() {
+        Ok(())
+    } else {
+        anyhow::bail!("cargo install failed (exit code: {:?})", status.code())
+    }
 }
 
 fn install_pkg(name: &str, url: &str, deps: fn() -> anyhow::Result<()>) -> anyhow::Result<()> {
@@ -213,11 +221,7 @@ fn uninstall_pkg(bin: &str, name: &str) -> anyhow::Result<()> {
         .status()
         .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
     if status.success() {
-        let cfg = config_dir();
-        if cfg.exists() {
-            let _ = std::fs::remove_dir_all(&cfg);
-        }
-        println!("✓ {name} uninstalled");
+        println!("✓ {name} uninstalled (profile and data preserved)");
         Ok(())
     } else {
         anyhow::bail!("uninstall failed (exit code: {:?})", status.code());
@@ -236,33 +240,56 @@ fn run_shell(cmd: &str, args: &[&str]) -> anyhow::Result<()> {
 }
 
 fn install_linux_deps(packages: &[&str], extra_wsl: Option<&[&str]>) -> anyhow::Result<()> {
-    if std::process::Command::new("apt-get").arg("--version").output().is_ok() {
+    if std::process::Command::new("apt-get")
+        .arg("--version")
+        .output()
+        .is_ok()
+    {
         println!("Detected Debian/Ubuntu/WSL — installing...");
         run_shell("sudo", &["apt-get", "update"])?;
         let mut apt = vec!["apt-get", "install", "-y"];
         apt.extend(packages);
         run_shell("sudo", &apt)?;
-        if let Some(wsl_pkgs) = extra_wsl {
-            if std::path::Path::new("/mnt/wslg").exists() && !std::path::Path::new("/etc/asound.conf").exists() {
-                println!("Setting up WSL2 audio bridge...");
-                let mut wsl = vec!["apt-get", "install", "-y"];
-                wsl.extend(wsl_pkgs);
-                run_shell("sudo", &wsl)?;
-                let conf = "pcm.!default {\ntype pulse\n}\nctl.!default {\ntype pulse\n}\n";
-                std::fs::write("/etc/asound.conf", conf).ok();
-                println!("WSL2 audio bridge installed.");
-            }
+        if let Some(wsl_pkgs) = extra_wsl
+            && std::path::Path::new("/mnt/wslg").exists()
+            && !std::path::Path::new("/etc/asound.conf").exists()
+        {
+            println!("Setting up WSL2 audio bridge...");
+            let mut wsl = vec!["apt-get", "install", "-y"];
+            wsl.extend(wsl_pkgs);
+            run_shell("sudo", &wsl)?;
+            let conf = "pcm.!default {\ntype pulse\n}\nctl.!default {\ntype pulse\n}\n";
+            run_shell(
+                "sudo",
+                &[
+                    "sh",
+                    "-c",
+                    &format!(
+                        "printf '%s' '{}' > /etc/asound.conf",
+                        conf.replace('\'', "'\\''"),
+                    ),
+                ],
+            )?;
+            println!("WSL2 audio bridge installed.");
         }
-    } else if std::process::Command::new("dnf").arg("--version").output().is_ok() {
+    } else if std::process::Command::new("dnf")
+        .arg("--version")
+        .output()
+        .is_ok()
+    {
         println!("Detected Fedora — installing...");
         let mut dnf = vec!["dnf", "install", "-y"];
         dnf.extend(packages);
         run_shell("sudo", &dnf)?;
-    } else if std::process::Command::new("pacman").arg("--version").output().is_ok() {
+    } else if std::process::Command::new("pacman")
+        .arg("--version")
+        .output()
+        .is_ok()
+    {
         println!("Detected Arch — installing...");
-        let mut pac = vec!["-S", "--noconfirm"];
+        let mut pac = vec!["pacman", "-S", "--needed", "--noconfirm"];
         pac.extend(packages);
-        run_shell("sudo", &["pacman", "-S", "--noconfirm"])?;
+        run_shell("sudo", &pac)?;
     } else {
         eprintln!("Could not detect a supported package manager.");
         return Err(anyhow::anyhow!("unsupported package manager"));
@@ -273,15 +300,28 @@ fn install_linux_deps(packages: &[&str], extra_wsl: Option<&[&str]>) -> anyhow::
 fn install_deps_tui() -> anyhow::Result<()> {
     if cfg!(target_os = "linux") {
         let r = install_linux_deps(
-            &["build-essential", "pkg-config", "libasound2-dev", "libpulse-dev", "libclang-dev", "libv4l-dev"],
+            &[
+                "build-essential",
+                "pkg-config",
+                "libasound2-dev",
+                "libpulse-dev",
+                "libclang-dev",
+                "libv4l-dev",
+            ],
             Some(&["libasound2-plugins"]),
         );
         if let Err(e) = r {
-            eprintln!("Please install manually: gcc, pkg-config, alsa-lib-dev, pulseaudio-dev, libclang-dev, libv4l-dev");
+            eprintln!(
+                "Please install manually: gcc, pkg-config, alsa-lib-dev, pulseaudio-dev, libclang-dev, libv4l-dev"
+            );
             return Err(e);
         }
     } else if cfg!(target_os = "macos") {
-        if std::process::Command::new("brew").arg("--version").output().is_ok() {
+        if std::process::Command::new("brew")
+            .arg("--version")
+            .output()
+            .is_ok()
+        {
             println!("Detected macOS (Homebrew) — installing...");
             run_shell("brew", &["install", "pkg-config"])?;
         } else {
@@ -300,16 +340,17 @@ fn install_deps_tui() -> anyhow::Result<()> {
 
 fn install_deps_server() -> anyhow::Result<()> {
     if cfg!(target_os = "linux") {
-        let r = install_linux_deps(
-            &["build-essential", "pkg-config", "libclang-dev"],
-            None,
-        );
+        let r = install_linux_deps(&["build-essential", "pkg-config", "libclang-dev"], None);
         if let Err(e) = r {
             eprintln!("Please install manually: gcc, pkg-config, libclang-dev");
             return Err(e);
         }
     } else if cfg!(target_os = "macos") {
-        if std::process::Command::new("brew").arg("--version").output().is_ok() {
+        if std::process::Command::new("brew")
+            .arg("--version")
+            .output()
+            .is_ok()
+        {
             println!("Detected macOS (Homebrew) — installing...");
             run_shell("brew", &["install", "pkg-config"])?;
         } else {
@@ -363,7 +404,10 @@ if ($LASTEXITCODE -eq 0) {{ ri $bak -ea 0; exit 0 }} else {{ ren $bak $old 2>$nu
 }
 
 fn print_help() {
-    println!("Starling v{} — federated p2p communications", env!("CARGO_PKG_VERSION"));
+    println!(
+        "Starling v{} — federated p2p communications",
+        env!("CARGO_PKG_VERSION")
+    );
     println!();
     println!("Usage:");
     println!("  starling install tui            install the TUI client");

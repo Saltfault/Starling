@@ -20,15 +20,14 @@ pub fn init() {
         let timestamp = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S");
         let gz_path = log_dir.join(format!("{timestamp}.log.gz"));
 
-        if let Ok(data) = fs::read(&latest) {
-            if let Ok(gz_file) = File::create(&gz_path) {
-                let mut encoder = GzEncoder::new(gz_file, Compression::default());
-                let _ = encoder.write_all(&data);
-                let _ = encoder.finish();
+        if let Ok(data) = fs::read(&latest)
+            && let Ok(gz_file) = File::create(&gz_path)
+        {
+            let mut encoder = GzEncoder::new(gz_file, Compression::default());
+            if encoder.write_all(&data).is_ok() && encoder.finish().is_ok() {
+                let _ = fs::remove_file(&latest);
             }
         }
-
-        let _ = fs::remove_file(&latest);
     }
 
     let _ = LOG_DIR.set(log_dir.clone());

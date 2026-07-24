@@ -12,7 +12,7 @@ pub fn topic_for(name: &str) -> TopicId {
 pub fn encode_node_id(node_id: &EndpointId) -> String {
     let bytes = node_id.as_bytes();
     let mut padded = bytes.to_vec();
-    while padded.len() % 3 != 0 {
+    while !padded.len().is_multiple_of(3) {
         padded.push(0);
     }
     let colors: Vec<String> = padded
@@ -27,11 +27,13 @@ pub fn room_code_from_node_id(node_id: &EndpointId) -> String {
 }
 
 pub fn decode_node_id(code: &str) -> Option<EndpointId> {
-    let code = code
-        .strip_prefix("BIRD-")
-        .or_else(|| code.strip_prefix("BIRD"))?;
-    let mut bytes = Vec::new();
-    for group in code.split('-') {
+    let code = code.strip_prefix("BIRD-")?;
+    let groups: Vec<_> = code.split('-').collect();
+    if groups.len() != 11 {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(33);
+    for group in groups {
         if group.len() != 6 {
             return None;
         }
@@ -42,7 +44,7 @@ pub fn decode_node_id(code: &str) -> Option<EndpointId> {
         bytes.push(g);
         bytes.push(b);
     }
-    if bytes.len() < 32 {
+    if bytes.len() != 33 || bytes[32] != 0 {
         return None;
     }
     let arr: [u8; 32] = bytes[..32].try_into().ok()?;
@@ -55,7 +57,7 @@ pub async fn broadcast_payload(
     payload: &GossipPayload,
 ) -> anyhow::Result<()> {
     let plaintext = postcard::to_stdvec(payload)?;
-    let ciphertext = crypto.encrypt(&plaintext);
+    let ciphertext = crypto.try_encrypt(&plaintext)?;
     sender.broadcast(ciphertext.into()).await?;
     Ok(())
 }
