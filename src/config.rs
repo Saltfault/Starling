@@ -1,11 +1,29 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Profile {
     pub name: String,
+    pub pronouns: String,
     pub input_device: Option<String>,
     pub output_device: Option<String>,
+    pub text_color: String,
+    pub bg_color: String,
+    pub border_color: String,
+}
+
+impl Default for Profile {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            pronouns: String::new(),
+            input_device: None,
+            output_device: None,
+            text_color: "#CFD6D2".into(),
+            bg_color: String::new(),
+            border_color: "#333B37".into(),
+        }
+    }
 }
 
 impl Profile {
@@ -61,8 +79,7 @@ impl Profile {
         let name = String::from_utf8(bytes[1..1 + len].to_vec()).ok()?;
         Some(Profile {
             name,
-            input_device: None,
-            output_device: None,
+            ..Default::default()
         })
     }
 

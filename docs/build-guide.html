@@ -126,6 +126,8 @@
     <li><a href="#p8">Phase 8 — Roles &amp; permissions</a></li>
     <li><a href="#p9">Phase 9 — Real cryptographic identity</a></li>
     <li><a href="#p10">Phase 10 — Own the murmuration</a></li>
+    <li><a href="#p11">Phase 11 — Invite UX: deep links &amp; clipboard</a></li>
+    <li><a href="#p12">Phase 12 — QR codes</a></li>
   </ol>
 </nav>
 
@@ -133,7 +135,7 @@
   <p class="lead">Starling works. Two birds anywhere on the internet can hatch a flock, chat over encrypted gossip, talk over Opus voice, see each other over terminal video, and hold several flocks at once — from a terminal, with no company in the middle. This guide walks the code that exists (Phases 0–6) so you understand every piece, then lays out the road ahead (Phases 7–10) in the same conventions the codebase already uses.</p>
   <div class="callout"><span class="lbl">The six repositories</span>Starling was one binary; it's now <strong>six repos</strong>. This guide is about <strong>Starling-TUI</strong> (v0.4.3), the working terminal client — every embedded listing is its real source. The protocol, crypto, and media pipelines also live as a shared library in <strong>Starling-Server</strong>, which doubles as the headless <em>roost</em> server (Phase 7). Three GUI clients — <strong>Desktop</strong>, <strong>Android</strong>, <strong>Web</strong> — are planned, sharing a Solid.JS + Tauri frontend over that same Rust core. Only the TUI and Server are in active development.</div>
   <div class="callout"><span class="lbl">The words we use</span>The app is <strong>Starling</strong>. The whole peer-to-peer network is <strong>the murmuration</strong>. Each node is a <strong>bird</strong>. A room of birds — one gossip topic, one shared key — is a <strong>flock</strong>, hatched by one bird and joined via its invite code. A bird that stays online to keep a community's history is a <strong>roost</strong> (Phase 7), and a private message sealed to a single bird is a <strong>chirp</strong> (Phase 9). That's the whole vocabulary — everything else keeps its ordinary networking name. The metaphor is load-bearing where it's used: a real murmuration is thousands of leaderless birds each reacting only to their neighbors, which is exactly how the gossip mesh works.</div>
-  <div class="callout"><span class="lbl">How to read this</span>Phases 0–6 are a <strong>tour of code that ships today</strong> in Starling-TUI — file by file, with the real source. Phases 7–10 are a <strong>roadmap with real code</strong> written to drop into the current module layout (<code class="inl">event.rs</code>, <code class="inl">net.rs</code>, <code class="inl">ui.rs</code>, <code class="inl">main.rs</code>, friends); Phase 7's roost server is partly built already in Starling-Server. Every phase ends with a checkpoint. When a phase touches an existing file, the code is labeled as an edit to that file — never a second competing version.</div>
+  <div class="callout"><span class="lbl">How to read this</span>Phases 0–6 are a <strong>tour of code that ships today</strong> in Starling-TUI — file by file, with the real source. Phases 7–12 are a <strong>roadmap with real code</strong> written to drop into the current module layout (<code class="inl">event.rs</code>, <code class="inl">net.rs</code>, <code class="inl">ui.rs</code>, <code class="inl">main.rs</code>, friends); Phase 7's roost server is partly built already in Starling-Server. Every phase ends with a checkpoint. When a phase touches an existing file, the code is labeled as an edit to that file — never a second competing version.</div>
 </section>
 
 <div class="divider">§</div>
@@ -4476,6 +4478,67 @@ peer_items.push(<span class="c-ty">ListItem</span>::new(<span class="c-ty">Span<
     <tr><td>Message edit / delete</td><td>Signed <code>GossipPayload::Edit</code>/<code>Tombstone</code>; roosts enforce authorship + MANAGE_MSGS.</td></tr>
     <tr><td>The lean-promise scoreboard</td><td><code>sysinfo</code> in the status line: RAM/CPU vs. the apps Starling replaces. Measure the brag.</td></tr>
   </table>
+</section>
+
+<div class="divider">§</div>
+
+<section id="p11">
+  <span class="phase-tag">Phase 11 · Soon</span>
+  <div class="kicker">Make invites painless</div>
+  <h2>Invite UX: deep links &amp; clipboard</h2>
+  <p class="lead">Goal: sharing an invite is one keypress, and accepting one is one click. The invite code is long (it carries a 32-byte identity) — so stop making anyone <em>type</em> it. Small, near-term polish; slot it in whenever.</p>
+
+  <h3>1 · Copy to clipboard</h3>
+  <p>Two triggers, both cheap. <strong>On demand:</strong> a key in the invite popup copies the code. <strong>Automatically:</strong> when you hatch a flock, drop the invite on the clipboard so it's ready to paste before you even ask. A small cross-platform clipboard crate handles every OS.</p>
+  <p class="filename">Cargo.toml + src/ui.rs — the whole feature</p>
+<pre><code>cargo add arboard          <span class="c-cm"># cross-platform clipboard</span>
+
+<span class="c-cm">// on `y` in the invite popup (and once, right after the Ticket event):</span>
+<span class="c-kw">if let</span> <span class="c-ty">Ok</span>(<span class="c-kw">mut</span> cb) = arboard::<span class="c-ty">Clipboard</span>::new() {
+    <span class="c-kw">let</span> _ = cb.set_text(app.node_id.clone().unwrap_or_default());
+    app.notice = <span class="c-ty">Some</span>(<span class="c-str">"invite copied"</span>.into());   <span class="c-cm">// flash it in the status line</span>
+}</code></pre>
+  <div class="callout"><span class="lbl">Small, honest caveat</span>On headless Linux the clipboard needs an X11/Wayland session; <code class="inl">arboard</code> degrades gracefully (returns an error you already handle by just not showing "copied"). Nothing to lose sleep over.</div>
+
+  <h3>2 · Deep links — <code class="inl">starling://join/&lt;code&gt;</code></h3>
+  <p>A URL scheme turns an invite into a clickable link: click it in a chat or email, the app opens and joins. You already have the join logic (<code class="inl">starling join &lt;code&gt;</code>); a deep link is just the OS handing that same code to the app through a registered scheme.</p>
+  <ul class="plain">
+    <li><strong>Register the scheme</strong> — <code class="inl">starling://</code> gets associated with the binary. On the packaged apps this is a manifest/installer entry per OS (a <code class="inl">.desktop</code> <code class="inl">MimeType</code> on Linux, an <code class="inl">Info.plist</code> <code class="inl">CFBundleURLTypes</code> on macOS, a registry key on Windows). The Desktop app gets this nearly for free via Tauri's deep-link plugin.</li>
+    <li><strong>Parse and route</strong> — an incoming <code class="inl">starling://join/&lt;code&gt;</code> just strips the prefix and feeds <code class="inl">&lt;code&gt;</code> into the exact path <code class="inl">starling join</code> already uses (<code class="inl">net::decode_node_id</code>). One <code class="inl">strip_prefix</code>, no new networking.</li>
+  </ul>
+  <p>Pair it with the copy step: the invite popup offers both the raw code <em>and</em> a ready-made <code class="inl">starling://join/…</code> link, and copies whichever the user asks for.</p>
+  <div class="callout"><span class="lbl">Why this is the real fix for long codes</span>Shortening the code fights against carrying a full public key. Deep links + clipboard make the length <em>not matter</em> — nobody types it, they click or paste. This lands the "short invite" experience without weakening the identity in the code.</div>
+  <p class="dim"><span class="check">✓ Checkpoint:</span> hatch a flock, the invite's already on your clipboard; a friend clicks a <code class="inl">starling://join/…</code> link and lands in the flock without typing a thing.</p>
+</section>
+
+<div class="divider">§</div>
+
+<section id="p12">
+  <span class="phase-tag">Phase 12 · Future — needs a mobile app</span>
+  <div class="kicker">Cross-device sharing</div>
+  <h2>QR codes</h2>
+  <p class="lead">Goal: show a QR of the invite so a phone can scan it, and let the mobile app scan to join. The <em>display</em> half is easy today; the <em>point</em> of a QR — jumping between a computer and a phone — only pays off once a mobile client exists, so this waits on the Android app.</p>
+
+  <h3>Displaying one (doable now)</h3>
+  <p>Encode the <code class="inl">starling://join/&lt;code&gt;</code> link (from Phase 11) into a QR and render it. In the terminal you can even draw it with the same half-block trick the video uses; in the Desktop app it's an <code class="inl">&lt;img&gt;</code> or canvas.</p>
+  <p class="filename">src/ui.rs — a QR in the invite popup</p>
+<pre><code>cargo add qrcode
+
+<span class="c-kw">let</span> link = format!(<span class="c-str">"starling://join/{}"</span>, code);
+<span class="c-kw">let</span> qr = qrcode::<span class="c-ty">QrCode</span>::new(link.as_bytes())?;
+<span class="c-cm">// render each module as two stacked half-blocks, like the webcam view</span>
+<span class="c-kw">for</span> row <span class="c-kw">in</span> qr.render::&lt;char&gt;().module_dimensions(<span class="c-num">1</span>, <span class="c-num">1</span>).build().lines() {
+    <span class="c-cm">// paint into the popup</span>
+}</code></pre>
+
+  <h3>Why it's gated on mobile</h3>
+  <p>A QR's whole reason to exist is <strong>cross-device</strong>: point a phone at a screen and you're in. Until there's a Starling client on the phone to <em>consume</em> the scan, a QR is just a fancier way to show a link you'd click anyway. So:</p>
+  <ul class="plain">
+    <li><strong>Now:</strong> optionally show the QR in the invite popup — harmless, mildly useful for anyone with a QR-to-clipboard tool.</li>
+    <li><strong>When the Android/Web client lands:</strong> add scanning on the mobile side (camera → decode → <code class="inl">starling://join</code>), and the QR becomes the fastest join there is — desktop shows it, phone scans it, done.</li>
+  </ul>
+  <div class="callout"><span class="lbl">The dependency, stated plainly</span>This phase is really two: a trivial "render a QR" that can land anytime, and a "scan a QR" that belongs to the mobile app's roadmap. Don't build the display half in isolation and call it done — it only earns its place paired with a scanner.</div>
+  <p class="dim"><span class="check">✓ Checkpoint (later):</span> a desktop invite popup shows a QR; a phone running the Starling mobile app scans it and joins the flock.</p>
 </section>
 
 <div class="divider">✦</div>

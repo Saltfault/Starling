@@ -53,6 +53,7 @@ jobs:
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          rustup component add rust-lld
 
       - name: Install tools
         run: |
@@ -64,8 +65,7 @@ jobs:
             gcc-i686-linux-gnu \
             gcc-aarch64-linux-gnu \
             gcc-arm-linux-gnueabihf \
-            gcc-mingw-w64-x86-64 \
-            gcc-mingw-w64-i686 \
+            lld \
             musl-tools
 
       - name: Build all targets
@@ -77,8 +77,8 @@ jobs:
             "i686-unknown-linux-gnu:i686-linux-gnu-gcc"
             "aarch64-unknown-linux-gnu:aarch64-linux-gnu-gcc"
             "armv7-unknown-linux-gnueabihf:arm-linux-gnueabihf-gcc"
-            "x86_64-pc-windows-gnu:x86_64-w64-mingw32-gcc"
-            "i686-pc-windows-gnu:i686-w64-mingw32-gcc"
+            "x86_64-pc-windows-msvc:lld-link"
+            "i686-pc-windows-msvc:lld-link"
           )
           for entry in "${targets[@]}"; do
             IFS=':' read -r target linker <<< "$entry"
