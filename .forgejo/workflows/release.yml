@@ -70,6 +70,7 @@ jobs:
             lld \
             libasound2-dev \
             musl-tools
+          update-alternatives --set ld /usr/bin/x86_64-linux-gnu-ld 2>/dev/null || true
 
       - name: Build all targets
         run: |
