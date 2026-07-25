@@ -14,6 +14,7 @@ pub enum GossipPayload {
     Chat(ChatMessage),
     Profile { id: EndpointId, name: String },
     Status { id: EndpointId, status: BirdStatus },
+    Presence(crate::presence::SignedPresenceLeaseV1),
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]

@@ -37,6 +37,10 @@ jobs:
             exit 0
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Run tests
         if: steps.check.outputs.skip == 'false'
         run: cargo test --all-features

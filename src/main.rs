@@ -152,6 +152,26 @@ fn main() -> anyhow::Result<()> {
             }
         },
 
+        Some("uninstall") => {
+            let dir = config_dir();
+            if !dir.exists() {
+                println!("No Starling data found at {}", dir.display());
+                return Ok(());
+            }
+            let force = args.get(2).map(String::as_str) == Some("--force");
+            if !force {
+                eprintln!("This will delete ALL Starling data:");
+                eprintln!("  {}", dir.display());
+                eprintln!("  (profiles, identity keys, roosts, logs, history)");
+                eprintln!();
+                eprintln!("Run 'starling uninstall --force' to confirm.");
+                std::process::exit(1);
+            }
+            println!("Deleting all Starling data...");
+            std::fs::remove_dir_all(&dir)?;
+            println!("✓ All Starling data deleted from {}", dir.display());
+            Ok(())
+        }
         Some("help" | "--help" | "-h") | None => {
             print_help();
             Ok(())
@@ -453,6 +473,8 @@ fn print_help() {
     println!("  starling server version        print Server version");
     println!("  starling server update         update the Server");
     println!("  starling server uninstall      uninstall the Server");
+    println!();
+    println!("  starling uninstall              delete ALL Starling data (requires --force)");
     println!();
     println!("  starling update                update Starling, TUI, and Server");
     println!("  starling update tui            update only the TUI");

@@ -1,15 +1,11 @@
 use std::fmt::{Debug, Display, Formatter};
-use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use flate2::Compression;
-use flate2::write::GzEncoder;
+static STATE: OnceLock<PathBuf> = OnceLock::new();
 
-use crate::config::Profile;
-
-static LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
+const ROTATE_SIZE: u64 = 8 * 1024 * 1024;
 
 /// Prevents secret-bearing values from being exposed through formatting or logs.
 pub struct Redacted<T>(pub T);
@@ -26,62 +22,68 @@ impl<T> Display for Redacted<T> {
     }
 }
 
-pub fn init() {
-    let log_dir = Profile::config_dir().join("logs");
-    fs::create_dir_all(&log_dir).ok();
-
-    let latest = log_dir.join("latest.log");
-
-    if latest.exists() {
-        let timestamp = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S%.3f");
-        let gz_path = log_dir.join(format!("{timestamp}.log.gz"));
-
-        if let Ok(data) = fs::read(&latest)
-            && let Ok(gz_file) = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&gz_path)
-        {
-            let mut encoder = GzEncoder::new(gz_file, Compression::default());
-            if encoder.write_all(&data).is_ok() && encoder.finish().is_ok() {
-                let _ = fs::remove_file(&latest);
-            } else {
-                let _ = fs::remove_file(&gz_path);
-            }
-        }
+/// Initialize the log file. Idempotent — safe to call from every subcommand.
+/// Rotates only when `latest.log` exceeds the size threshold, not on every
+/// invocation. Returns an error only if the log directory cannot be created.
+pub fn init() -> anyhow::Result<()> {
+    if STATE.get().is_some() {
+        return Ok(());
     }
-
-    let _ = LOG_DIR.set(log_dir.clone());
-
-    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-    let _ = fs::write(
-        log_dir.join("latest.log"),
-        format!("[{timestamp}] === Starling started ===\n"),
-    );
+    let dir = crate::config::Profile::config_dir().join("logs");
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join("latest.log");
+    if std::fs::metadata(&path)
+        .map(|m| m.len() > ROTATE_SIZE)
+        .unwrap_or(false)
+    {
+        let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%S%.6f");
+        let _ = std::fs::rename(&path, dir.join(format!("log-{stamp}.log")));
+    }
+    let _ = STATE.set(path);
+    Ok(())
 }
 
-fn log(level: &str, msg: &str) {
-    let Some(dir) = LOG_DIR.get() else { return };
-    let path = dir.join("latest.log");
-
-    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-    let line = format!("[{timestamp}] {level}{msg}\n");
-
-    if let Ok(mut file) = OpenOptions::new().append(true).create(true).open(&path) {
-        let _ = file.write_all(line.as_bytes());
+fn write(level: &str, msg: &str) {
+    let line = format!("{} {level} {msg}\n", chrono::Utc::now().to_rfc3339());
+    match STATE.get() {
+        Some(path) => {
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+            {
+                if file.write_all(line.as_bytes()).is_err() {
+                    eprint!("{line}");
+                }
+            } else {
+                eprint!("{line}");
+            }
+        }
+        None => eprint!("{line}"),
     }
 }
 
 pub fn info(msg: &str) {
-    log("INFO:  ", msg);
-}
-
-pub fn error(msg: &str) {
-    log("ERROR: ", msg);
+    write("INFO", msg);
 }
 
 pub fn warn(msg: &str) {
-    log("WARN:  ", msg);
+    write("WARN", msg);
+}
+
+pub fn error(msg: &str) {
+    write("ERROR", msg);
+}
+
+/// Log a short fingerprint, NEVER the secret. Applies to invites, keys,
+/// certificates, message bodies and media — none of which may be logged in full.
+pub fn fingerprint(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let hash = Sha256::digest(bytes);
+    format!(
+        "{:02x}{:02x}{:02x}{:02x}",
+        hash[0], hash[1], hash[2], hash[3]
+    )
 }
 
 #[cfg(test)]
@@ -93,5 +95,13 @@ mod tests {
         let secret = Redacted([42_u8; 32]);
         assert_eq!(format!("{secret}"), "[REDACTED]");
         assert_eq!(format!("{secret:?}"), "[REDACTED]");
+    }
+
+    #[test]
+    fn fingerprint_is_short_and_deterministic() {
+        let fp = super::fingerprint(b"invite-secret");
+        assert_eq!(fp.len(), 8);
+        assert_eq!(fp, super::fingerprint(b"invite-secret"));
+        assert_ne!(fp, super::fingerprint(b"different-secret"));
     }
 }

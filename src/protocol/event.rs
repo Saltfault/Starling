@@ -1,6 +1,6 @@
 use iroh::{EndpointId, Signature};
 use serde::{Deserialize, Serialize};
-use sha2_10::{Digest, Sha256};
+use sha2::{Digest, Sha256};
 
 use crate::crypto::EpochKey;
 

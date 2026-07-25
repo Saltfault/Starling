@@ -5,7 +5,6 @@ use chacha20poly1305::{
 use hkdf::Hkdf;
 use rand::random;
 use sha2::{Digest, Sha256};
-use sha2_10::Sha256 as Sha256V10;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 const EPOCH_KEY_INFO: &[u8] = b"starling/v1/epoch-key";
@@ -18,7 +17,7 @@ impl EpochKey {
     /// Derives an epoch key from secret input key material and public context.
     pub fn derive(secret: &[u8], context: &[u8], epoch: u64) -> anyhow::Result<Self> {
         anyhow::ensure!(!secret.is_empty(), "epoch key secret must not be empty");
-        let hkdf = Hkdf::<Sha256V10>::new(Some(context), secret);
+        let hkdf = Hkdf::<Sha256>::new(Some(context), secret);
         let mut key = [0_u8; 32];
         let mut info = Vec::with_capacity(EPOCH_KEY_INFO.len() + 8);
         info.extend_from_slice(EPOCH_KEY_INFO);
