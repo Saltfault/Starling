@@ -1,11 +1,14 @@
 use crate::event::ChatMessage;
 use iroh::endpoint::Connection;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tokio::time::timeout;
 
 pub const SYNC_ALPN: &[u8] = b"starling/sync/0";
 const MAX_MESSAGES: usize = 500;
 const MAX_REQUEST_BYTES: usize = 16;
 const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const IO_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub type History = Arc<Mutex<Vec<ChatMessage>>>;
 
@@ -24,8 +27,12 @@ impl iroh::protocol::ProtocolHandler for SyncProto {
 
 impl SyncProto {
     async fn serve(&self, conn: Connection) -> anyhow::Result<()> {
-        let (mut send, mut recv) = conn.accept_bi().await?;
-        let req = recv.read_to_end(MAX_REQUEST_BYTES).await?;
+        let (mut send, mut recv) = timeout(IO_TIMEOUT, conn.accept_bi())
+            .await
+            .map_err(|_| anyhow::anyhow!("timed out waiting for a sync request"))??;
+        let req = timeout(IO_TIMEOUT, recv.read_to_end(MAX_REQUEST_BYTES))
+            .await
+            .map_err(|_| anyhow::anyhow!("timed out reading the sync request"))??;
         let since: i64 = postcard::from_bytes(&req)?;
 
         let mut recent: Vec<ChatMessage> = {
@@ -49,9 +56,10 @@ impl SyncProto {
             recent.remove(0);
         };
 
-        send.write_all(&response).await?;
+        timeout(IO_TIMEOUT, send.write_all(&response))
+            .await
+            .map_err(|_| anyhow::anyhow!("timed out writing the sync response"))??;
         send.finish()?;
-        conn.closed().await;
         Ok(())
     }
 }

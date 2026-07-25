@@ -383,14 +383,22 @@ ren $old $bak 2>$null
 cargo install --jobs 2 --git {URL_STARLING}
 if ($LASTEXITCODE -eq 0) {{ ri $bak -ea 0; exit 0 }} else {{ ren $bak $old 2>$null; exit $LASTEXITCODE }}"#
         );
-        let ps = std::env::temp_dir().join("starling-update.ps1");
-        let _ = std::fs::write(&ps, script);
+        let ps = std::env::temp_dir().join(format!("starling-update-{}.ps1", uuid::Uuid::new_v4()));
+        let mut script_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&ps)
+            .map_err(|e| anyhow::anyhow!("failed to create updater script: {e}"))?;
+        std::io::Write::write_all(&mut script_file, script.as_bytes())
+            .and_then(|()| script_file.sync_all())
+            .map_err(|e| anyhow::anyhow!("failed to write updater script: {e}"))?;
+        drop(script_file);
         let status = std::process::Command::new("powershell")
             .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
             .arg(&ps)
-            .status()
-            .map_err(|e| anyhow::anyhow!("failed to run PowerShell: {e}"))?;
+            .status();
         let _ = std::fs::remove_file(&ps);
+        let status = status.map_err(|e| anyhow::anyhow!("failed to run PowerShell: {e}"))?;
         if status.success() {
             println!("✓ Starling updated to the latest version");
             Ok(())

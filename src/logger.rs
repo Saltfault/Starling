@@ -1,4 +1,4 @@
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -17,15 +17,20 @@ pub fn init() {
     let latest = log_dir.join("latest.log");
 
     if latest.exists() {
-        let timestamp = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S");
+        let timestamp = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S%.3f");
         let gz_path = log_dir.join(format!("{timestamp}.log.gz"));
 
         if let Ok(data) = fs::read(&latest)
-            && let Ok(gz_file) = File::create(&gz_path)
+            && let Ok(gz_file) = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&gz_path)
         {
             let mut encoder = GzEncoder::new(gz_file, Compression::default());
             if encoder.write_all(&data).is_ok() && encoder.finish().is_ok() {
                 let _ = fs::remove_file(&latest);
+            } else {
+                let _ = fs::remove_file(&gz_path);
             }
         }
     }
