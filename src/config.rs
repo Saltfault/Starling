@@ -192,6 +192,13 @@ fn secret_from_bytes(path: &Path, bytes: &[u8]) -> anyhow::Result<iroh::SecretKe
 }
 
 fn create_secret_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let options = secret_open_options();
+    let mut file = options.open(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()
+}
+
+fn secret_open_options() -> std::fs::OpenOptions {
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -199,16 +206,80 @@ fn create_secret_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut file = options.open(path)?;
-    file.write_all(bytes)?;
-    file.sync_all()
+    options
+}
+
+/// Atomically publishes non-secret bytes from a same-directory temporary file.
+pub fn write_public_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    write_atomic(path, bytes, false)
+}
+
+/// Atomically publishes secret bytes. New temporary files use mode 0600 on Unix.
+/// Callers on Windows must additionally protect the parent directory with a
+/// current-user-only ACL or an OS credential store.
+pub fn write_secret_atomic(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    write_atomic(path, bytes, true)
+}
+
+pub fn read_secret_bounded(path: &Path, max_bytes: usize) -> anyhow::Result<Vec<u8>> {
+    let metadata = std::fs::metadata(path)
+        .with_context(|| format!("failed to inspect secret at {}", path.display()))?;
+    anyhow::ensure!(metadata.is_file(), "secret path is not a regular file");
+    anyhow::ensure!(
+        metadata.len() <= max_bytes as u64,
+        "secret exceeds the configured size limit"
+    );
+    let bytes = std::fs::read(path)
+        .with_context(|| format!("failed to read secret at {}", path.display()))?;
+    anyhow::ensure!(bytes.len() <= max_bytes, "secret grew while being read");
+    Ok(bytes)
+}
+
+fn write_atomic(path: &Path, bytes: &[u8], secret: bool) -> anyhow::Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("record path has no parent directory"))?;
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("failed to create directory {}", parent.display()))?;
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| anyhow::anyhow!("record path has no file name"))?
+        .to_string_lossy();
+    let temporary = parent.join(format!(".{file_name}.{}.tmp", uuid::Uuid::new_v4()));
+    let options = if secret {
+        secret_open_options()
+    } else {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        options
+    };
+    let result = (|| -> anyhow::Result<()> {
+        let mut file = options.open(&temporary).with_context(|| {
+            format!("failed to create temporary record {}", temporary.display())
+        })?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        #[cfg(windows)]
+        if path.exists() {
+            std::fs::remove_file(path)
+                .with_context(|| format!("failed to replace existing record {}", path.display()))?;
+        }
+        std::fs::rename(&temporary, path)
+            .with_context(|| format!("failed to publish record at {}", path.display()))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
         DEFAULT_ACCENT_COLOR, DEFAULT_AUTHOR_COLOR, DEFAULT_DIM_COLOR, DEFAULT_SELECTION_COLOR,
-        LegacyProfile, Profile,
+        LegacyProfile, Profile, read_secret_bounded, write_public_atomic, write_secret_atomic,
     };
 
     #[test]
@@ -262,5 +333,27 @@ mod tests {
 
         let decoded = Profile::from_code(&profile.to_code()).expect("valid profile code");
         assert_eq!(decoded.name, "abcdefghijklmn");
+    }
+
+    #[test]
+    fn atomic_records_round_trip_and_enforce_read_bounds() {
+        let dir =
+            std::env::temp_dir().join(format!("starling-config-test-{}", uuid::Uuid::new_v4()));
+        let public = dir.join("public.bin");
+        let secret = dir.join("secret.bin");
+        write_public_atomic(&public, b"descriptor").expect("write public record");
+        write_secret_atomic(&secret, b"epoch-key").expect("write secret record");
+        assert_eq!(std::fs::read(public).unwrap(), b"descriptor");
+        assert_eq!(read_secret_bounded(&secret, 9).unwrap(), b"epoch-key");
+        assert!(read_secret_bounded(&secret, 8).is_err());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&secret).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

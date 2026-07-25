@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Display, Formatter};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
@@ -9,6 +10,21 @@ use flate2::write::GzEncoder;
 use crate::config::Profile;
 
 static LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// Prevents secret-bearing values from being exposed through formatting or logs.
+pub struct Redacted<T>(pub T);
+
+impl<T> Debug for Redacted<T> {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("[REDACTED]")
+    }
+}
+
+impl<T> Display for Redacted<T> {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("[REDACTED]")
+    }
+}
 
 pub fn init() {
     let log_dir = Profile::config_dir().join("logs");
@@ -66,4 +82,16 @@ pub fn error(msg: &str) {
 
 pub fn warn(msg: &str) {
     log("WARN:  ", msg);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Redacted;
+
+    #[test]
+    fn secret_formatting_is_always_redacted() {
+        let secret = Redacted([42_u8; 32]);
+        assert_eq!(format!("{secret}"), "[REDACTED]");
+        assert_eq!(format!("{secret:?}"), "[REDACTED]");
+    }
 }
