@@ -6,6 +6,8 @@ use sha2::{Digest, Sha256};
 
 use crate::protocol::{ChannelId, RoostId};
 
+pub mod perms;
+
 pub const MANIFEST_VERSION: u16 = 1;
 pub const MAX_CHANNELS: usize = 256;
 pub const MAX_CHANNEL_NAME_BYTES: usize = 128;
@@ -16,10 +18,45 @@ const MANIFEST_HASH_DOMAIN: &[u8] = b"starling/roost-manifest-hash/v1\0";
 pub type ManifestHash = [u8; 32];
 
 /// The original persisted state. Its wire representation must remain stable.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RoostState {
     pub name: String,
     pub channels: Vec<String>,
+    /// Roles, memberships, bans, and invitations. A redacted copy of this travels
+    /// over the roost control channel so clients can color names and gate menus;
+    /// the enforcement verdicts are always recomputed roost-side.
+    #[serde(default)]
+    pub perms: perms::PermState,
+}
+
+/// A moderation request sent by a client to the roost's mod protocol. The
+/// sender's identity is authenticated by the iroh transport, not claimed in the
+/// request body, so a modified client cannot spoof `from`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ModRequest {
+    Ban(EndpointId),
+    Kick(EndpointId),
+    Invite(EndpointId),
+    DeleteMessage { channel: String, id: String },
+}
+
+/// The roost's answer to a successful join handshake: its name and, per
+/// channel, the secret key needed to decrypt gossip. Non-members never receive
+/// one, so they can neither read channels nor derive their keys.
+///
+/// `control_secret` carries the key for the roost's control channel (where
+/// `RoostState` updates are broadcast). Phase 9 added this so the control
+/// channel is encrypted with a high-entropy secret rather than a
+/// public-derivable room code — closing the last gap where a non-member
+/// who merely knows the roost code could read the member/ban list.
+/// `None` indicates an old server that still derives the control cipher from
+/// the public code; clients fall back to `from_room_code` for back-compat.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoostWelcome {
+    pub name: String,
+    pub channels: Vec<(String, [u8; 32])>,
+    #[serde(default)]
+    pub control_secret: Option<[u8; 32]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -265,5 +302,30 @@ mod tests {
             manifests: [(hash, first)].into(),
         };
         assert!(later.sign(&key).unwrap().validate_with(&hooks).is_err());
+    }
+
+    #[test]
+    fn welcome_round_trips_control_secret_and_is_back_compatible() {
+        // A Phase 9 welcome carries a control_secret.
+        let welcome = RoostWelcome {
+            name: "Nest".into(),
+            channels: vec![("general".into(), [1; 32])],
+            control_secret: Some([2; 32]),
+        };
+        let encoded = postcard::to_stdvec(&welcome).unwrap();
+        let decoded: RoostWelcome = postcard::from_bytes(&encoded).unwrap();
+        assert_eq!(decoded.name, "Nest");
+        assert_eq!(decoded.channels[0].1, [1; 32]);
+        assert_eq!(decoded.control_secret, Some([2; 32]));
+
+        // A legacy welcome (no control_secret) decodes with control_secret = None.
+        let legacy = postcard::to_stdvec(&RoostWelcome {
+            name: "Old".into(),
+            channels: vec![("general".into(), [9; 32])],
+            control_secret: None,
+        })
+        .unwrap();
+        let decoded: RoostWelcome = postcard::from_bytes(&legacy).unwrap();
+        assert_eq!(decoded.control_secret, None);
     }
 }

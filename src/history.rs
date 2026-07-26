@@ -485,7 +485,24 @@ fn validate_links<S: TrustedStore>(
                     .is_none(),
                 "session genesis already exists"
             );
-            let prior = store.sender_head(space, &e.sender)?;
+            // The prior accepted head may be in the durable store or in this
+            // same batch (not yet committed). Consider both so that a new
+            // session genesis cannot skip linking its predecessor.
+            let stored_prior = store.sender_head(space, &e.sender)?;
+            let incoming_prior = incoming
+                .values()
+                .filter(|candidate| {
+                    let ce = &candidate.event.event;
+                    ce.sender == e.sender
+                        && ce.session_id != e.session_id
+                        && !ce.parents.contains(&trusted.hash)
+                })
+                .max_by_key(|candidate| candidate.event.event.sequence)
+                .map(|candidate| candidate.hash);
+            // The effective prior head is the latest event from this sender.
+            // When both exist, prefer the incoming prior if its sequence is
+            // higher, otherwise the stored head is still the latest point.
+            let prior = incoming_prior.or(stored_prior);
             if let Some(prior) = prior {
                 ensure!(
                     e.parents.binary_search(&prior).is_ok(),
@@ -977,6 +994,37 @@ mod tests {
         assert_eq!(
             missing_parents(&store, &space, [[9; 32]], &[], 10).unwrap(),
             vec![[9; 32]]
+        );
+    }
+
+    #[test]
+    fn same_batch_new_session_must_link_prior_sender_head() {
+        let (key, epoch, space, _, store) = fixture();
+        let first_session = event(&key, &epoch, space, 1, 0, vec![]);
+        let first_hash = first_session.verify().unwrap();
+        // A second session genesis in the same batch must link the sender's
+        // prior accepted head. Previously validate_links only consulted the
+        // committed store, so this incorrectly passed when it should fail.
+        let unlinked_second_session = event(&key, &epoch, space, 2, 0, vec![]);
+        assert!(
+            validate_batch(
+                &store,
+                space,
+                raw(space, &[first_session.clone(), unlinked_second_session])
+            )
+            .is_err(),
+            "new session genesis must include the prior sender head as a parent"
+        );
+        // With the link present, validation should succeed.
+        let linked_second_session = event(&key, &epoch, space, 2, 0, vec![first_hash]);
+        assert!(
+            validate_batch(
+                &store,
+                space,
+                raw(space, &[first_session, linked_second_session])
+            )
+            .is_ok(),
+            "new session genesis with prior head should be valid"
         );
     }
 }

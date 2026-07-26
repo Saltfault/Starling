@@ -132,7 +132,7 @@ Starling uses a handful of bird terms, and only where they carry weight. Everyth
 | 6 | Many flocks at once | 🚧 In progress |
 | 7 | Roosts: persistent servers & channels | 🚧 In progress |
 | 8 | Roles & permissions (invite-only roosts) | 📋 Planned |
-| 9 | Cryptographic identity — signing, chirps | 📋 Planned |
+| 9 | Cryptographic identity — signing, chirps | 🚧 In progress |
 | 10 | Own the murmuration — self-hosted relays | 📋 Planned |
 
 ---

@@ -225,8 +225,8 @@ impl MembershipState {
             );
         } else {
             ensure!(
-                body.effective_key_epoch >= self.key_epoch,
-                "non-removal cannot regress key epoch"
+                body.effective_key_epoch == self.key_epoch,
+                "non-removal must not change the key epoch"
             );
         }
 

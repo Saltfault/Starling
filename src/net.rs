@@ -1,5 +1,5 @@
 use crate::crypto::FlockCrypto;
-use crate::event::GossipPayload;
+use crate::event::{GossipPayload, Signed};
 use data_encoding::HEXUPPER;
 use iroh::EndpointId;
 use iroh_gossip::proto::TopicId;
@@ -148,15 +148,72 @@ pub fn decode_node_id(code: &str) -> Option<EndpointId> {
     EndpointId::from_bytes(&arr).ok()
 }
 
+/// Sign-then-encrypt a [`GossipPayload`] for the V0 gossip layer. The bytes
+/// that actually leave the endpoint are `postcard(Signed)` inside a
+/// `ChaCha20Poly1305` flock envelope, so receivers can authenticate the
+/// sender with `Endpoints::author_verify(&payload, &sig)` before binding any
+/// embedded identity claim to a friendly name.
 pub async fn broadcast_payload(
     sender: &iroh_gossip::api::GossipSender,
     crypto: &FlockCrypto,
+    secret: &iroh::SecretKey,
     payload: &GossipPayload,
 ) -> anyhow::Result<()> {
-    let plaintext = postcard::to_stdvec(payload)?;
+    let payload_bytes = postcard::to_stdvec(payload)?;
+    let signed = Signed::sign(secret, payload_bytes);
+    let plaintext = postcard::to_stdvec(&signed)?;
     let ciphertext = crypto.try_encrypt(&plaintext)?;
     sender.broadcast(ciphertext.into()).await?;
     Ok(())
+}
+
+/// Decrypted result of a Phase 9 gossip frame: the verified endpoint and the
+/// `postcard(GossipPayload)` bytes that were carried inside the [`Signed`]
+/// envelope. Receivers should match on the inner payload and bind any
+/// embedded `id` claim to [`Self::author`] rather than trusting the claim.
+#[derive(Clone, Debug)]
+pub struct VerifiedEnvelope {
+    pub author: EndpointId,
+    pub payload: GossipPayload,
+}
+
+/// Decrypt, parse, and verify a Phase 9 gossip frame in one step. Returns
+/// `Ok(Some(verdict))` when the envelope is well-formed and signed by the
+/// claimed author; `Ok(None)` when the bytes decrypt but are not a Phase 9
+/// envelope (called sites can fall back to a legacy unsigned `GossipPayload`
+/// for back-compat); `Err` only when the flock cipher fails to authenticate —
+/// a sign of tampering or of a peer advertising the wrong topic.
+pub fn receive_payload(
+    crypto: &FlockCrypto,
+    ciphertext: &[u8],
+) -> Result<Option<VerifiedEnvelope>, anyhow::Error> {
+    let Some(plaintext) = crypto.decrypt(ciphertext) else {
+        return Ok(None);
+    };
+    let Ok(signed) = postcard::from_bytes::<Signed>(&plaintext) else {
+        return Ok(None);
+    };
+    if let Err(message) = signed.verify() {
+        crate::logger::warn(&format!(
+            "dropping a gossip frame with a forged signature: {message}"
+        ));
+        return Ok(None);
+    }
+    let payload = postcard::from_bytes::<GossipPayload>(&signed.payload)?;
+    let claimed = match &payload {
+        GossipPayload::Profile { id, .. } | GossipPayload::Status { id, .. } => Some(*id),
+        _ => None,
+    };
+    if let Some(id) = claimed {
+        if id != signed.author {
+            crate::logger::warn("dropping gossip frame: payload id != signed author");
+            return Ok(None);
+        }
+    }
+    Ok(Some(VerifiedEnvelope {
+        author: signed.author,
+        payload,
+    }))
 }
 
 #[cfg(test)]

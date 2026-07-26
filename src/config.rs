@@ -72,6 +72,11 @@ impl Default for Profile {
 
 impl Profile {
     pub fn config_dir() -> PathBuf {
+        if cfg!(target_os = "windows")
+            && let Some(appdata) = std::env::var_os("APPDATA").filter(|value| !value.is_empty())
+        {
+            return PathBuf::from(appdata).join("starling");
+        }
         if let Some(home) = std::env::var_os("HOME").filter(|value| !value.is_empty()) {
             PathBuf::from(home).join(".config").join("starling")
         } else if let Some(appdata) = std::env::var_os("APPDATA").filter(|value| !value.is_empty())
@@ -179,6 +184,56 @@ impl Profile {
                 .with_context(|| format!("failed to persist identity key at {}", path.display())),
         }
     }
+
+    /// Load or persist the per-bird `crypto_box` DM secret. This key is
+    /// SEPARATE from the ed25519 [`identity.key`](Self::try_load_or_create_secret);
+    /// the public half is published through signed profile announcements so
+    /// other birds can seal chirps to it, but it is never used as an identity
+    /// key — keeping the ed25519 and Curve25519 ceremonies distinct.
+    pub fn load_or_create_dm_secret_bytes() -> [u8; 32] {
+        Self::try_load_or_create_dm_secret_bytes().unwrap_or_else(|error| {
+            crate::logger::error(&format!("failed to persist DM key: {error}"));
+            rand::random()
+        })
+    }
+
+    pub fn try_load_or_create_dm_secret_bytes() -> anyhow::Result<[u8; 32]> {
+        let dir = Self::config_dir();
+        let path = dir.join("dm.key");
+        match std::fs::read(&path) {
+            Ok(bytes) => return dm_secret_from_bytes(&path, &bytes),
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("failed to read DM key at {}", path.display()));
+            }
+        }
+
+        std::fs::create_dir_all(&dir)
+            .with_context(|| format!("failed to create config directory {}", dir.display()))?;
+        let bytes = rand::random::<[u8; 32]>();
+        match create_secret_file(&path, &bytes) {
+            Ok(()) => Ok(bytes),
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+                let stored = std::fs::read(&path).with_context(|| {
+                    format!(
+                        "failed to read concurrently-created DM key at {}",
+                        path.display()
+                    )
+                })?;
+                dm_secret_from_bytes(&path, &stored)
+            }
+            Err(error) => Err(error)
+                .with_context(|| format!("failed to persist DM key at {}", path.display())),
+        }
+    }
+}
+
+fn dm_secret_from_bytes(path: &Path, bytes: &[u8]) -> anyhow::Result<[u8; 32]> {
+    let Ok(bytes) = <[u8; 32]>::try_from(bytes) else {
+        bail!("DM key at {} must be exactly 32 bytes", path.display());
+    };
+    Ok(bytes)
 }
 
 fn secret_from_bytes(path: &Path, bytes: &[u8]) -> anyhow::Result<iroh::SecretKey> {
