@@ -100,6 +100,11 @@ pub fn fingerprint(bytes: &[u8]) -> String {
     )
 }
 
+/// Returns the path to the current log file, if logging has been initialized.
+pub fn path() -> Option<PathBuf> {
+    STATE.get().cloned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::Redacted;
