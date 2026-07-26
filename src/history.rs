@@ -497,12 +497,25 @@ fn validate_links<S: TrustedStore>(
                         && ce.session_id != e.session_id
                         && !ce.parents.contains(&trusted.hash)
                 })
-                .max_by_key(|candidate| candidate.event.event.sequence)
-                .map(|candidate| candidate.hash);
+                .max_by_key(|candidate| candidate.event.event.sequence);
             // The effective prior head is the latest event from this sender.
             // When both exist, prefer the incoming prior if its sequence is
             // higher, otherwise the stored head is still the latest point.
-            let prior = incoming_prior.or(stored_prior);
+            let prior = match (incoming_prior, stored_prior) {
+                (Some(inc), Some(stored_hash)) => {
+                    let stored_seq = store
+                        .event(space, &stored_hash)?
+                        .map(|ev| ev.event.event.sequence)
+                        .unwrap_or(0);
+                    if inc.event.event.sequence > stored_seq {
+                        Some(inc.hash)
+                    } else {
+                        Some(stored_hash)
+                    }
+                }
+                (Some(inc), None) => Some(inc.hash),
+                (None, s) => s,
+            };
             if let Some(prior) = prior {
                 ensure!(
                     e.parents.binary_search(&prior).is_ok(),
@@ -1025,6 +1038,51 @@ mod tests {
             )
             .is_ok(),
             "new session genesis with prior head should be valid"
+        );
+    }
+
+    /// When both a stored prior head and an incoming prior candidate exist,
+    /// the new session genesis must link whichever has the higher sequence.
+    /// The bug (CORE-13) unconditionally preferred the incoming candidate
+    /// via `Option::or`, letting an older incoming event satisfy the link
+    /// check even when a newer stored head was available.
+    #[test]
+    fn session_genesis_links_newer_head_over_older_incoming() {
+        let (key, epoch, space, _, store) = fixture();
+        // Build a session with multiple events so the stored sender head has
+        // sequence 2.
+        let s1_g0 = event(&key, &epoch, space, 1, 0, vec![]);
+        let s1_g0_hash = s1_g0.verify().unwrap();
+        let s1_s1 = event(&key, &epoch, space, 1, 1, vec![s1_g0_hash]);
+        let s1_s1_hash = s1_s1.verify().unwrap();
+        let s1_s2 = event(&key, &epoch, space, 1, 2, vec![s1_s1_hash]);
+        let s1_s2_hash = s1_s2.verify().unwrap();
+        validate_batch(&store, space, raw(space, &[s1_g0, s1_s1, s1_s2])).unwrap();
+
+        // An event from a different session that itself links the stored head.
+        // This acts as the incoming prior candidate (sequence 0) for any
+        // later genesis in the same batch.
+        let incoming_s2 = event(&key, &epoch, space, 2, 0, vec![s1_s2_hash]);
+        let incoming_s2_hash = incoming_s2.verify().unwrap();
+
+        // Genesis links only the incoming candidate (sequence 0) — must FAIL
+        // because the stored head (sequence 2) is strictly newer.
+        let bad_genesis = event(&key, &epoch, space, 3, 0, vec![incoming_s2_hash]);
+        assert!(
+            validate_batch(
+                &store,
+                space,
+                raw(space, &[incoming_s2.clone(), bad_genesis])
+            )
+            .is_err(),
+            "genesis must link the stored head when it is newer than the incoming prior"
+        );
+
+        // Genesis links the stored head (sequence 2) — must PASS.
+        let good_genesis = event(&key, &epoch, space, 3, 0, vec![s1_s2_hash]);
+        assert!(
+            validate_batch(&store, space, raw(space, &[incoming_s2, good_genesis])).is_ok(),
+            "genesis linking the stored (newer) head should be valid"
         );
     }
 }

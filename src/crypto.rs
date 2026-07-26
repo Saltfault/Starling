@@ -113,6 +113,7 @@ impl FlockCrypto {
         Self { cipher }
     }
 
+    #[deprecated(since = "0.3.19", note = "use try_encrypt and propagate the Result")]
     pub fn encrypt(&self, plaintext: &[u8]) -> Vec<u8> {
         self.try_encrypt(plaintext).unwrap_or_else(|e| {
             crate::logger::warn(&format!("flock encryption failed: {e}"));
@@ -161,12 +162,15 @@ const CHIRP_NONCE_LEN: usize = 24;
 /// Seal a 1:1 chirp to `their` DM public key using `my` DM secret key for the
 /// X25519 DH derivation. Output is `[24-byte nonce | ciphertext]` and can be
 /// sent through a flock that only relays opaque bytes.
-pub fn seal_chirp(my: &DmSecretKey, their: &DmPublicKey, plain: &[u8]) -> Vec<u8> {
+pub fn seal_chirp(my: &DmSecretKey, their: &DmPublicKey, plain: &[u8]) -> anyhow::Result<Vec<u8>> {
     let box_ = ChaChaBox::new(their, my);
     let nonce = ChaChaBox::generate_nonce(&mut OsRng);
+    let ciphertext = box_
+        .encrypt(&nonce, plain)
+        .map_err(|_| anyhow::anyhow!("failed to seal chirp"))?;
     let mut out = nonce.to_vec();
-    out.extend(box_.encrypt(&nonce, plain).unwrap_or_default());
-    out
+    out.extend(ciphertext);
+    Ok(out)
 }
 
 /// Open a chirp sealed with [`seal_chirp`]. Returns `None` if the blob is too
@@ -249,7 +253,7 @@ mod tests {
         let bob_pk = bob.public_key();
         let alice_pk = alice.public_key();
 
-        let sealed = super::seal_chirp(&alice, &bob_pk, b"chirp");
+        let sealed = super::seal_chirp(&alice, &bob_pk, b"chirp").expect("seal");
         assert_eq!(
             super::open_chirp(&bob, &alice_pk, &sealed).expect("bob opens"),
             b"chirp"

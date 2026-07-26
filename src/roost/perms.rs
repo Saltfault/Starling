@@ -127,6 +127,16 @@ impl PermState {
         Ok(())
     }
 
+    /// Delete a message from a channel. Requires the `MANAGE_MSGS` permission.
+    /// Guards `ModRequest::DeleteMessage`.
+    pub fn handle_delete_message(&self, from: &EndpointId) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.effective(from).contains(Perm::MANAGE_MSGS),
+            "not allowed"
+        );
+        Ok(())
+    }
+
     /// Remove a bird from the roost. Requires the `KICK` permission and that the
     /// actor outranks the target. The kicked bird is dropped from `members` and
     /// `invited`, so — the roost being invite-only — they cannot return without a

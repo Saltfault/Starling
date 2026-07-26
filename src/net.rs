@@ -188,7 +188,10 @@ pub fn receive_payload(
     ciphertext: &[u8],
 ) -> Result<Option<VerifiedEnvelope>, anyhow::Error> {
     let Some(plaintext) = crypto.decrypt(ciphertext) else {
-        return Ok(None);
+        crate::logger::warn("gossip frame failed AEAD authentication (dropped)");
+        return Err(anyhow::anyhow!(
+            "flock cipher failed to authenticate — tampering or wrong topic"
+        ));
     };
     let Ok(signed) = postcard::from_bytes::<Signed>(&plaintext) else {
         return Ok(None);
@@ -199,7 +202,10 @@ pub fn receive_payload(
         ));
         return Ok(None);
     }
-    let payload = postcard::from_bytes::<GossipPayload>(&signed.payload)?;
+    let Ok(payload) = postcard::from_bytes::<GossipPayload>(&signed.payload) else {
+        crate::logger::warn("gossip frame carried a malformed GossipPayload (dropped)");
+        return Ok(None);
+    };
     let claimed = match &payload {
         GossipPayload::Profile { id, .. } | GossipPayload::Status { id, .. } => Some(*id),
         _ => None,

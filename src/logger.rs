@@ -1,9 +1,10 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 static STATE: OnceLock<PathBuf> = OnceLock::new();
+static WRITE_MUTEX: Mutex<()> = Mutex::new(());
 
 const ROTATE_SIZE: u64 = 8 * 1024 * 1024;
 
@@ -23,8 +24,7 @@ impl<T> Display for Redacted<T> {
 }
 
 /// Initialize the log file. Idempotent — safe to call from every subcommand.
-/// Rotates only when `latest.log` exceeds the size threshold, not on every
-/// invocation. Returns an error only if the log directory cannot be created.
+/// Returns an error only if the log directory cannot be created.
 pub fn init() -> anyhow::Result<()> {
     if STATE.get().is_some() {
         return Ok(());
@@ -32,21 +32,34 @@ pub fn init() -> anyhow::Result<()> {
     let dir = crate::config::Profile::config_dir().join("logs");
     std::fs::create_dir_all(&dir)?;
     let path = dir.join("latest.log");
-    if std::fs::metadata(&path)
-        .map(|m| m.len() > ROTATE_SIZE)
-        .unwrap_or(false)
-    {
-        let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%S%.6f");
-        let _ = std::fs::rename(&path, dir.join(format!("log-{stamp}.log")));
-    }
+    maybe_rotate(&path);
     let _ = STATE.set(path);
     Ok(())
 }
 
+/// Rotate `latest.log` into a timestamped archive when it exceeds the size
+/// threshold.  Idempotent — does nothing if the file is absent or small.
+fn maybe_rotate(path: &std::path::Path) {
+    if std::fs::metadata(path)
+        .map(|m| m.len() > ROTATE_SIZE)
+        .unwrap_or(false)
+    {
+        if let Some(dir) = path.parent() {
+            let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%S%.6f");
+            let target = dir.join(format!("log-{stamp}-{}.log", std::process::id()));
+            if std::fs::rename(path, &target).is_err() {
+                eprintln!("log rotation failed for {}", path.display());
+            }
+        }
+    }
+}
+
 fn write(level: &str, msg: &str) {
     let line = format!("{} {level} {msg}\n", chrono::Utc::now().to_rfc3339());
+    let _guard = WRITE_MUTEX.lock().unwrap();
     match STATE.get() {
         Some(path) => {
+            maybe_rotate(path);
             if let Ok(mut file) = std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -54,6 +67,8 @@ fn write(level: &str, msg: &str) {
             {
                 if file.write_all(line.as_bytes()).is_err() {
                     eprint!("{line}");
+                } else if level == "ERROR" {
+                    let _ = file.sync_all();
                 }
             } else {
                 eprint!("{line}");

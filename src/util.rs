@@ -39,6 +39,9 @@ where
         let saved = libc::dup(STDERR);
         let devnull = libc::open(c"/dev/null".as_ptr(), libc::O_WRONLY);
         let redirected = saved >= 0 && devnull >= 0 && libc::dup2(devnull, STDERR) >= 0;
+        if !redirected {
+            crate::logger::warn("suppress_stderr: could not redirect stderr");
+        }
         StderrGuard {
             saved,
             devnull,

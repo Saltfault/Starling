@@ -11,6 +11,12 @@ use crate::membership::{MembershipScopeId, MembershipState};
 use crate::protocol::SpaceId;
 
 pub const MAX_LEASE_SECS: u64 = 60;
+
+/// Number of membership revisions a presence lease may lag behind the current
+/// view before it is rejected. A small window smooths over propagation delay
+/// while still being stricter than accepting any past revision.
+const REVISION_LAG: u64 = 2;
+
 const LEASE_DOMAIN: &[u8] = b"starling/v1/presence-lease";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -97,6 +103,16 @@ pub struct PresenceTracker {
 }
 
 impl PresenceTracker {
+    /// Validate and record a signed presence lease.
+    ///
+    /// A lease is only accepted if the issuer is still a member at (or
+    /// near) the **current** membership revision. If the issuer has fallen
+    /// behind, the lease is rejected until they catch up — this is
+    /// intentional: a stale membership view should not grant presence.
+    ///
+    /// To avoid rejecting leases during brief propagation lag, the check
+    /// tolerates a small revision window ([`REVISION_LAG`]) behind the
+    /// current revision.
     pub fn accept(
         &mut self,
         lease: &SignedPresenceLeaseV1,
@@ -110,10 +126,13 @@ impl PresenceTracker {
             membership.scope() == membership_scope(body.space),
             "presence membership scope mismatch"
         );
+        // Accept leases whose membership view is no older than
+        // REVISION_LAG revisions behind the current view.
+        let floor = membership.revision().saturating_sub(REVISION_LAG);
         ensure!(
             membership.authorized_at(
                 &body.endpoint,
-                membership.revision(),
+                floor,
                 membership.key_epoch()
             ),
             "presence endpoint is not a current member"

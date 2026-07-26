@@ -38,6 +38,8 @@ pub enum ModRequest {
     Kick(EndpointId),
     Invite(EndpointId),
     DeleteMessage { channel: String, id: String },
+    AddChannel(String),
+    RemoveChannel(String),
 }
 
 /// The roost's answer to a successful join handshake: its name and, per
