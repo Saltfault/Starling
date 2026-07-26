@@ -72,6 +72,9 @@ impl Default for Profile {
 
 impl Profile {
     pub fn config_dir() -> PathBuf {
+        if let Some(dir) = std::env::var_os("STARLING_CONFIG_DIR").filter(|v| !v.is_empty()) {
+            return PathBuf::from(dir);
+        }
         if cfg!(target_os = "windows")
             && let Some(appdata) = std::env::var_os("APPDATA").filter(|value| !value.is_empty())
         {
@@ -83,7 +86,9 @@ impl Profile {
         {
             PathBuf::from(appdata).join("starling")
         } else {
-            PathBuf::from(".starling")
+            // Never scatter identity/keys into the CWD.
+            eprintln!("no config dir: set HOME (or APPDATA), or STARLING_CONFIG_DIR");
+            std::process::exit(1);
         }
     }
 
