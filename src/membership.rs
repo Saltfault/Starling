@@ -179,6 +179,60 @@ impl MembershipState {
         }
     }
 
+    /// Build a membership state directly from a flat list of members without a
+    /// V1 mutation chain. Used by roost runtimes that manage membership through
+    /// their own authority model (e.g. [`crate::roost::perms::PermState`]) rather
+    /// than signed [`SignedMembershipMutationV1`] entries.
+    pub fn from_flat(
+        scope: MembershipScopeId,
+        admin: EndpointId,
+        members: impl IntoIterator<Item = EndpointId>,
+        key_epoch: u64,
+    ) -> Self {
+        let admin_auth = MemberAuthorization {
+            role: MemberRole::Admin,
+            generation: 0,
+            from_key_epoch: 0,
+            until_key_epoch: None,
+        };
+        let mut members_map = BTreeMap::from([(admin, admin_auth.clone())]);
+        let mut generations = HashMap::from([(admin, 0u64)]);
+        let mut authorizations = HashMap::from([(admin, vec![admin_auth])]);
+
+        for member in members {
+            if member == admin {
+                continue;
+            }
+            let auth = MemberAuthorization {
+                role: MemberRole::Member,
+                generation: 0,
+                from_key_epoch: 0,
+                until_key_epoch: None,
+            };
+            members_map.insert(member, auth.clone());
+            generations.insert(member, 0u64);
+            authorizations.insert(member, vec![auth]);
+        }
+
+        let snapshot = MembershipSnapshot {
+            scope,
+            revision: 0,
+            head_hash: None,
+            key_epoch,
+            members: members_map.clone(),
+        };
+        Self {
+            scope,
+            revision: 0,
+            head_hash: None,
+            key_epoch,
+            members: members_map,
+            generations,
+            authorizations,
+            snapshots: BTreeMap::from([(0, snapshot)]),
+        }
+    }
+
     pub fn fold(
         scope: MembershipScopeId,
         creator: EndpointId,
