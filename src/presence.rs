@@ -130,11 +130,7 @@ impl PresenceTracker {
         // REVISION_LAG revisions behind the current view.
         let floor = membership.revision().saturating_sub(REVISION_LAG);
         ensure!(
-            membership.authorized_at(
-                &body.endpoint,
-                floor,
-                membership.key_epoch()
-            ),
+            membership.authorized_at(&body.endpoint, floor, membership.key_epoch()),
             "presence endpoint is not a current member"
         );
         let key = (body.space, body.endpoint);
