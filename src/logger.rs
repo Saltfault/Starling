@@ -43,13 +43,12 @@ fn maybe_rotate(path: &std::path::Path) {
     if std::fs::metadata(path)
         .map(|m| m.len() > ROTATE_SIZE)
         .unwrap_or(false)
+        && let Some(dir) = path.parent()
     {
-        if let Some(dir) = path.parent() {
-            let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%S%.6f");
-            let target = dir.join(format!("log-{stamp}-{}.log", std::process::id()));
-            if std::fs::rename(path, &target).is_err() {
-                eprintln!("log rotation failed for {}", path.display());
-            }
+        let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%S%.6f");
+        let target = dir.join(format!("log-{stamp}-{}.log", std::process::id()));
+        if std::fs::rename(path, &target).is_err() {
+            eprintln!("log rotation failed for {}", path.display());
         }
     }
 }

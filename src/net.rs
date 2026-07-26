@@ -210,11 +210,11 @@ pub fn receive_payload(
         GossipPayload::Profile { id, .. } | GossipPayload::Status { id, .. } => Some(*id),
         _ => None,
     };
-    if let Some(id) = claimed {
-        if id != signed.author {
-            crate::logger::warn("dropping gossip frame: payload id != signed author");
-            return Ok(None);
-        }
+    if let Some(id) = claimed
+        && id != signed.author
+    {
+        crate::logger::warn("dropping gossip frame: payload id != signed author");
+        return Ok(None);
     }
     Ok(Some(VerifiedEnvelope {
         author: signed.author,
