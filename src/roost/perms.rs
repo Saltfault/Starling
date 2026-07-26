@@ -56,6 +56,10 @@ pub struct PermState {
     pub bans: HashSet<EndpointId>,
     /// Birds approved by an invite but not yet admitted on first join.
     pub invited: HashSet<EndpointId>,
+    /// Monotonically increasing epoch bumped on ban so that a banned bird's
+    /// cached channel secrets stop working after the server mints new secrets
+    /// and re-provisions remaining members.
+    pub key_epoch: u64,
 }
 
 impl PermState {
@@ -101,22 +105,25 @@ impl PermState {
         self.owner.as_ref() == Some(who) || self.members.contains_key(who)
     }
 
+    /// Whether `who` is a member in good standing (not banned).
+    /// Banned ex-members are still in `members`, so `is_member()` alone
+    /// would let them pull history or send moderation requests.
+    pub fn is_active_member(&self, who: &EndpointId) -> bool {
+        self.is_member(who) && !self.bans.contains(who)
+    }
+
     /// The enforcement pattern — every privileged action looks like this.
     /// Checks that `from` holds `BAN` and outranks `target`, then records the
-    /// ban.
-    ///
-    /// Key rotation on ban is Phase 8 closure work: the ban evicts the bird
-    /// from the door check but does not invalidate their existing channel
-    /// secrets, so a banned bird can still read traffic until the keys rotate.
-    /// Phase 9 made rotation mechanically possible — all channel ciphers are
-    /// now `from_secret`, and `Store::channel_secret` / `Store::control_secret`
-    /// can mint replacements — but the rotation protocol itself (broadcast a
-    /// `RoostState` update, surviving members re-join via JOIN_ALPN to receive
-    /// fresh secrets, banned bird is refused at the door) is not yet wired.
+    /// ban, removes the target from members, and bumps `key_epoch` so the
+    /// caller can mint new channel secrets and re-provision remaining members.
+    /// Until the caller wires that re-provisioning, a banned bird may still
+    /// read traffic with cached keys.
     pub fn handle_ban(&mut self, from: &EndpointId, target: &EndpointId) -> anyhow::Result<()> {
         anyhow::ensure!(self.effective(from).contains(Perm::BAN), "not allowed");
         anyhow::ensure!(self.outranks(from, target), "can't ban equal/higher rank");
         self.bans.insert(*target);
+        self.members.remove(target);
+        self.key_epoch += 1;
         Ok(())
     }
 
@@ -229,6 +236,11 @@ mod tests {
         // mod can ban a lower-ranked peer.
         assert!(state.handle_ban(&mod_, &peer).is_ok());
         assert!(state.bans.contains(&peer));
+        assert!(
+            !state.members.contains_key(&peer),
+            "banned member must be removed from members"
+        );
+        assert_eq!(state.key_epoch, 1, "key_epoch must be bumped on ban");
 
         // mod cannot ban an equal-ranked mod.
         assert!(state.handle_ban(&mod_, &equal_mod).is_err());
