@@ -158,14 +158,18 @@ impl PermState {
         Ok(())
     }
 
-    /// The door check. Invited birds become members on first join; existing
-    /// members are admitted unchanged; banned birds are refused.
+    /// The door check. Existing members are admitted unchanged; banned birds
+    /// are refused; everyone else is auto-admitted — simply having the roost
+    /// code (being able to connect) is sufficient proof of invitation.
+    /// The `invited` set is still populated via `handle_invite` for UI
+    /// tracking, but it no longer gates admission.
     pub fn handle_join(&mut self, who: &EndpointId) -> anyhow::Result<()> {
         anyhow::ensure!(!self.bans.contains(who), "banned");
         if self.is_member(who) {
             return Ok(());
         }
-        anyhow::ensure!(self.invited.remove(who), "not invited");
+        // Clean up any prior explicit invitation (best-effort; not gating).
+        self.invited.remove(who);
         self.members.insert(*who, vec![]); // member, no roles yet
         Ok(())
     }
@@ -290,7 +294,7 @@ mod tests {
     }
 
     #[test]
-    fn handle_join_admits_invited_and_refuses_others() {
+    fn handle_join_admits_invited_and_strangers_and_refuses_banned() {
         let owner = id(11);
         let invited_bird = id(12);
         let stranger = id(13);
@@ -310,9 +314,9 @@ mod tests {
         assert!(state.is_member(&invited_bird));
         assert!(!state.invited.contains(&invited_bird));
 
-        // a stranger with no invitation is refused.
-        assert!(state.handle_join(&stranger).is_err());
-        assert!(!state.is_member(&stranger));
+        // a stranger with no explicit invitation is auto-admitted.
+        assert!(state.handle_join(&stranger).is_ok());
+        assert!(state.is_member(&stranger));
 
         // a banned bird is refused even if somehow invited.
         state.invited.insert(banned);
