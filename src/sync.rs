@@ -1,4 +1,5 @@
 use crate::event::ChatMessage;
+use crate::membership::MembershipState;
 use iroh::endpoint::Connection;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -15,6 +16,7 @@ pub type History = Arc<Mutex<Vec<ChatMessage>>>;
 #[derive(Debug, Clone)]
 pub struct SyncProto {
     pub history: History,
+    pub members: Arc<Mutex<MembershipState>>,
 }
 
 impl iroh::protocol::ProtocolHandler for SyncProto {
@@ -34,6 +36,19 @@ impl SyncProto {
             .await
             .map_err(|_| anyhow::anyhow!("timed out reading the sync request"))??;
         let since: i64 = postcard::from_bytes(&req)?;
+
+        // Require membership before serving history.
+        let who = conn.remote_id();
+        {
+            let m = self
+                .members
+                .lock()
+                .map_err(|_| anyhow::anyhow!("membership lock poisoned"))?;
+            anyhow::ensure!(
+                m.authorized_at(&who, m.revision(), m.key_epoch()),
+                "sync refused: not a member"
+            );
+        }
 
         let mut recent: Vec<ChatMessage> = {
             let h = self
