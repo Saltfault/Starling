@@ -149,8 +149,8 @@ impl Profile {
 
     pub fn load_or_create_secret() -> iroh::SecretKey {
         Self::try_load_or_create_secret().unwrap_or_else(|error| {
-            crate::logger::error(&format!("failed to persist identity key: {error}"));
-            iroh::SecretKey::generate()
+            crate::logger::error(&format!("cannot load/persist identity key: {error}"));
+            std::process::exit(1);
         })
     }
 
