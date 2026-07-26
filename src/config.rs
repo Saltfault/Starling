@@ -197,8 +197,8 @@ impl Profile {
     /// key — keeping the ed25519 and Curve25519 ceremonies distinct.
     pub fn load_or_create_dm_secret_bytes() -> [u8; 32] {
         Self::try_load_or_create_dm_secret_bytes().unwrap_or_else(|error| {
-            crate::logger::error(&format!("failed to persist DM key: {error}"));
-            rand::random()
+            crate::logger::error(&format!("cannot load/persist DM key: {error}"));
+            std::process::exit(1);
         })
     }
 
