@@ -19,3 +19,4 @@ jobs:
         with:
           args: >
             -Dsonar.projectKey=Saltfault_Starling_ee91e177-41f5-417b-b646-e040a1b75df4
+
