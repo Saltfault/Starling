@@ -59,10 +59,15 @@ fn main() -> anyhow::Result<()> {
         },
 
         Some("leave") => {
-            let _code = args.get(2).cloned().unwrap_or_default();
-            eprintln!("starling leave is not implemented yet; close the app (Esc),");
-            eprintln!("or stop a roost with: starling roost close <name>");
-            std::process::exit(1);
+            if tui_missing() {
+                eprintln!("install the TUI first: starling install tui");
+                std::process::exit(1);
+            }
+            let code = args.get(2).cloned().unwrap_or_else(|| {
+                eprintln!("Usage: starling leave <code>");
+                std::process::exit(1);
+            });
+            exec("starling-tui", &["leave", &code])
         }
         Some("list") => {
             let roosts_dir = config_dir().join("roosts");
@@ -832,7 +837,7 @@ fn print_help() {
     println!("  starling profile set <f> <v>    set a profile field non-interactively");
     println!("  starling join <code>            join a flock or roost");
     println!("  starling open                   open the TUI");
-    println!("  starling leave <code>           leave a flock or roost (not yet implemented)");
+    println!("  starling leave <code>           leave a flock or roost");
     println!("  starling list                   list roosts on disk");
     println!("  starling doctor                 diagnose setup");
     println!("  starling logs                   show log file path");
