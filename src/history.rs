@@ -604,14 +604,18 @@ fn topological_order<S: TrustedStore>(
     Ok(ordered)
 }
 
+/// Per-event in-degree and child adjacency lists for the incoming batch:
+/// the structures Kahn's algorithm walks in [`topological_order`].
+type DependencyGraph = (
+    BTreeMap<EventHash, usize>,
+    BTreeMap<EventHash, Vec<EventHash>>,
+);
+
 fn build_dependency_graph<S: TrustedStore>(
     store: &S,
     space: &SpaceId,
     incoming: &BTreeMap<EventHash, TrustedEvent>,
-) -> anyhow::Result<(
-    BTreeMap<EventHash, usize>,
-    BTreeMap<EventHash, Vec<EventHash>>,
-)> {
+) -> anyhow::Result<DependencyGraph> {
     let mut indegree = BTreeMap::<EventHash, usize>::new();
     let mut children = BTreeMap::<EventHash, Vec<EventHash>>::new();
     for (&hash, trusted) in incoming {
