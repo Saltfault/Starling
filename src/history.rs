@@ -10,7 +10,8 @@ use sha2::{Digest, Sha256};
 
 use crate::membership::{MembershipScopeId, MembershipState};
 use crate::protocol::{
-    EventHash, KIND_EVENT_V1, MAX_EVENT_CIPHERTEXT, MAX_EVENT_PARENTS, SignedEventV1, SpaceId,
+    EventHash, EventUnsignedV1, KIND_EVENT_V1, MAX_EVENT_CIPHERTEXT, MAX_EVENT_PARENTS,
+    SignedEventV1, SpaceId,
 };
 
 pub const HISTORY_V1_ALPN: &[u8] = b"starling/history/1";
@@ -472,75 +473,104 @@ fn validate_links<S: TrustedStore>(
 ) -> anyhow::Result<()> {
     for trusted in incoming.values() {
         let e = &trusted.event.event;
-        for parent in &e.parents {
-            ensure!(
-                incoming.contains_key(parent) || store.event(space, parent)?.is_some(),
-                "event has an unresolved parent"
-            );
-        }
+        check_parents_resolved(store, space, incoming, e)?;
         if e.sequence == 0 {
-            ensure!(
-                store
-                    .sequence_hash(space, &e.sender, &e.session_id, 0)?
-                    .is_none(),
-                "session genesis already exists"
-            );
-            // The prior accepted head may be in the durable store or in this
-            // same batch (not yet committed). Consider both so that a new
-            // session genesis cannot skip linking its predecessor.
-            let stored_prior = store.sender_head(space, &e.sender)?;
-            let incoming_prior = incoming
-                .values()
-                .filter(|candidate| {
-                    let ce = &candidate.event.event;
-                    ce.sender == e.sender
-                        && ce.session_id != e.session_id
-                        && !ce.parents.contains(&trusted.hash)
-                })
-                .max_by_key(|candidate| candidate.event.event.sequence);
-            // The effective prior head is the latest event from this sender.
-            // When both exist, prefer the incoming prior if its sequence is
-            // higher, otherwise the stored head is still the latest point.
-            let prior = match (incoming_prior, stored_prior) {
-                (Some(inc), Some(stored_hash)) => {
-                    let stored_seq = store
-                        .event(space, &stored_hash)?
-                        .map(|ev| ev.event.event.sequence)
-                        .unwrap_or(0);
-                    if inc.event.event.sequence > stored_seq {
-                        Some(inc.hash)
-                    } else {
-                        Some(stored_hash)
-                    }
-                }
-                (Some(inc), None) => Some(inc.hash),
-                (None, s) => s,
-            };
-            if let Some(prior) = prior {
-                ensure!(
-                    e.parents.binary_search(&prior).is_ok(),
-                    "new session does not link the sender's prior accepted head"
-                );
-            }
+            check_genesis_link(store, space, incoming, trusted)?;
         } else {
-            let previous_sequence = e.sequence - 1;
-            let previous = incoming
-                .values()
-                .find(|candidate| {
-                    let p = &candidate.event.event;
-                    p.sender == e.sender
-                        && p.session_id == e.session_id
-                        && p.sequence == previous_sequence
-                })
-                .map(|candidate| candidate.hash)
-                .or(store.sequence_hash(space, &e.sender, &e.session_id, previous_sequence)?);
-            let previous = previous.context("event sequence has a gap")?;
-            ensure!(
-                e.parents.binary_search(&previous).is_ok(),
-                "event is missing its immediate sequence parent"
-            );
+            check_sequence_link(store, space, incoming, e)?;
         }
     }
+    Ok(())
+}
+
+fn check_parents_resolved<S: TrustedStore>(
+    store: &S,
+    space: &SpaceId,
+    incoming: &BTreeMap<EventHash, TrustedEvent>,
+    e: &EventUnsignedV1,
+) -> anyhow::Result<()> {
+    for parent in &e.parents {
+        ensure!(
+            incoming.contains_key(parent) || store.event(space, parent)?.is_some(),
+            "event has an unresolved parent"
+        );
+    }
+    Ok(())
+}
+
+fn check_genesis_link<S: TrustedStore>(
+    store: &S,
+    space: &SpaceId,
+    incoming: &BTreeMap<EventHash, TrustedEvent>,
+    trusted: &TrustedEvent,
+) -> anyhow::Result<()> {
+    let e = &trusted.event.event;
+    ensure!(
+        store
+            .sequence_hash(space, &e.sender, &e.session_id, 0)?
+            .is_none(),
+        "session genesis already exists"
+    );
+    // The prior accepted head may be in the durable store or in this
+    // same batch (not yet committed). Consider both so that a new
+    // session genesis cannot skip linking its predecessor.
+    let stored_prior = store.sender_head(space, &e.sender)?;
+    let incoming_prior = incoming
+        .values()
+        .filter(|candidate| {
+            let ce = &candidate.event.event;
+            ce.sender == e.sender
+                && ce.session_id != e.session_id
+                && !ce.parents.contains(&trusted.hash)
+        })
+        .max_by_key(|candidate| candidate.event.event.sequence);
+    // The effective prior head is the latest event from this sender.
+    // When both exist, prefer the incoming prior if its sequence is
+    // higher, otherwise the stored head is still the latest point.
+    let prior = match (incoming_prior, stored_prior) {
+        (Some(inc), Some(stored_hash)) => {
+            let stored_seq = store
+                .event(space, &stored_hash)?
+                .map(|ev| ev.event.event.sequence)
+                .unwrap_or(0);
+            if inc.event.event.sequence > stored_seq {
+                Some(inc.hash)
+            } else {
+                Some(stored_hash)
+            }
+        }
+        (Some(inc), None) => Some(inc.hash),
+        (None, s) => s,
+    };
+    if let Some(prior) = prior {
+        ensure!(
+            e.parents.binary_search(&prior).is_ok(),
+            "new session does not link the sender's prior accepted head"
+        );
+    }
+    Ok(())
+}
+
+fn check_sequence_link<S: TrustedStore>(
+    store: &S,
+    space: &SpaceId,
+    incoming: &BTreeMap<EventHash, TrustedEvent>,
+    e: &EventUnsignedV1,
+) -> anyhow::Result<()> {
+    let previous_sequence = e.sequence - 1;
+    let previous = incoming
+        .values()
+        .find(|candidate| {
+            let p = &candidate.event.event;
+            p.sender == e.sender && p.session_id == e.session_id && p.sequence == previous_sequence
+        })
+        .map(|candidate| candidate.hash)
+        .or(store.sequence_hash(space, &e.sender, &e.session_id, previous_sequence)?);
+    let previous = previous.context("event sequence has a gap")?;
+    ensure!(
+        e.parents.binary_search(&previous).is_ok(),
+        "event is missing its immediate sequence parent"
+    );
     Ok(())
 }
 
@@ -549,22 +579,7 @@ fn topological_order<S: TrustedStore>(
     space: &SpaceId,
     incoming: &BTreeMap<EventHash, TrustedEvent>,
 ) -> anyhow::Result<Vec<EventHash>> {
-    let mut indegree = BTreeMap::<EventHash, usize>::new();
-    let mut children = BTreeMap::<EventHash, Vec<EventHash>>::new();
-    for (&hash, trusted) in incoming {
-        indegree.insert(hash, 0);
-        for parent in &trusted.event.event.parents {
-            if incoming.contains_key(parent) {
-                *indegree.get_mut(&hash).expect("inserted") += 1;
-                children.entry(*parent).or_default().push(hash);
-            } else {
-                ensure!(
-                    store.event(space, parent)?.is_some(),
-                    "event has an unresolved parent"
-                );
-            }
-        }
-    }
+    let (mut indegree, children) = build_dependency_graph(store, space, incoming)?;
     let mut ready: BTreeSet<EventHash> = indegree
         .iter()
         .filter_map(|(&hash, &degree)| (degree == 0).then_some(hash))
@@ -587,6 +602,33 @@ fn topological_order<S: TrustedStore>(
         "history batch contains a cycle"
     );
     Ok(ordered)
+}
+
+fn build_dependency_graph<S: TrustedStore>(
+    store: &S,
+    space: &SpaceId,
+    incoming: &BTreeMap<EventHash, TrustedEvent>,
+) -> anyhow::Result<(
+    BTreeMap<EventHash, usize>,
+    BTreeMap<EventHash, Vec<EventHash>>,
+)> {
+    let mut indegree = BTreeMap::<EventHash, usize>::new();
+    let mut children = BTreeMap::<EventHash, Vec<EventHash>>::new();
+    for (&hash, trusted) in incoming {
+        indegree.insert(hash, 0);
+        for parent in &trusted.event.event.parents {
+            if incoming.contains_key(parent) {
+                *indegree.get_mut(&hash).expect("inserted") += 1;
+                children.entry(*parent).or_default().push(hash);
+            } else {
+                ensure!(
+                    store.event(space, parent)?.is_some(),
+                    "event has an unresolved parent"
+                );
+            }
+        }
+    }
+    Ok((indegree, children))
 }
 
 /// Recursively discovers absent ancestors from untrusted advertised heads.
