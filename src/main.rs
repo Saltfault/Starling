@@ -322,7 +322,10 @@ fn config_dir() -> std::path::PathBuf {
 
 fn cargo_install(url: &str) -> anyhow::Result<()> {
     let mut command = std::process::Command::new("cargo");
-    command.args(["install", "--jobs", "2", "--git", url]);
+    // `--force` overwrites an existing install of the same version instead of
+    // erroring (cargo refuses without it once the binary is already on PATH),
+    // so `starling install tui` / `starling update tui` can re-run in place.
+    command.args(["install", "--jobs", "2", "--force", "--git", url]);
     if url == URL_TUI {
         command.args(["--features", "audio,video"]);
     } else if url == URL_SERVER {
