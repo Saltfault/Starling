@@ -167,3 +167,4 @@ jobs:
           done
 
           echo "Forgejo release $TAG created with $(ls -1 artifacts | wc -l) assets"
+
