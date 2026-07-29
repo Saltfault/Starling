@@ -111,7 +111,6 @@ jobs:
             cp "target/$target/release/starling$ext" "starling-$target$ext"
             sha256sum "starling-$target$ext" > "starling-$target.sha256"
           done
-          cp install.sh install.ps1 .
 
       - name: Download macOS from GitHub Release
         env:
@@ -151,6 +150,7 @@ jobs:
 
           mkdir -p artifacts
           mv starling-* artifacts/ 2>/dev/null || true
+          mv install.sh install.ps1 artifacts/ 2>/dev/null || true
 
           curl -s -X DELETE "$API/repos/$OWNER/$REPO/releases/tags/$TAG" \
             -H "Authorization: Bearer $FORGEJO_TOKEN" > /dev/null 2>&1
