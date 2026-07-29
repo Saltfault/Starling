@@ -18,6 +18,7 @@ jobs:
       skip: ${{ steps.check.outputs.skip }}
     steps:
       - uses: actions/checkout@v6
+      - uses: kunobi-ninja/kache-action@v1
         with:
           fetch-depth: 0
       - name: Extract version
