@@ -2,6 +2,7 @@ use sha2::Digest;
 use std::io::Read;
 
 const BASE_URL: &str = "https://forgejo.hearthhome.lol/Saltfault";
+const API_URL: &str = "https://forgejo.hearthhome.lol/api/v1/repos/Saltfault";
 const REPO_STARLING: &str = "Starling";
 const REPO_TUI: &str = "Starling-TUI";
 const REPO_SERVER: &str = "Starling-Server";
@@ -97,7 +98,7 @@ fn download_binary(repo: &str, bin_name: &str) -> anyhow::Result<()> {
 }
 
 fn get_latest_tag(repo: &str) -> anyhow::Result<String> {
-    let url = format!("{BASE_URL}/api/v1/repos/Saltfault/{repo}/releases/latest");
+    let url = format!("{API_URL}/{repo}/releases/latest");
     let resp = ureq::get(&url)
         .call()
         .map_err(|e| anyhow::anyhow!("failed to fetch latest release: {e}"))?;
