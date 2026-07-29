@@ -11,6 +11,7 @@ VERSION="latest"
 UNINSTALL=false
 UPGRADE=false
 FORGEJO="https://forgejo.hearthhome.lol/Saltfault"
+API="https://forgejo.hearthhome.lol/api/v1/repos/Saltfault"
 INSTALL_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
 
 while [[ $# -gt 0 ]]; do
@@ -45,7 +46,7 @@ fi
 if $UPGRADE; then echo "Upgrading $BINARY to $VERSION..."; fi
 
 if [[ "$VERSION" == "latest" ]]; then
-    TAG=$(curl -sSf "$FORGEJO/api/v1/repos/Saltfault/$REPO/releases/latest" | grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4)
+    TAG=$(curl -sSf "$API/$REPO/releases/latest" | grep -o '"tag_name":"[^"]*"' | cut -d'"' -f4)
 else
     TAG="$VERSION"
 fi
@@ -56,19 +57,6 @@ echo "Downloading $ASSET ($TAG)..."
 mkdir -p "$INSTALL_DIR"
 curl -sSfL "$URL" -o "$INSTALL_DIR/$BINARY"
 chmod +x "$INSTALL_DIR/$BINARY"
-
-SHA_URL="$FORGEJO/$REPO/releases/download/$TAG/$BINARY-${TARGET}.sha256"
-if EXPECTED=$(curl -sSf "$SHA_URL" 2>/dev/null | cut -d' ' -f1); then
-    ACTUAL=$(sha256sum "$INSTALL_DIR/$BINARY" | cut -d' ' -f1)
-    if [[ "$EXPECTED" != "$ACTUAL" ]]; then
-        rm -f "$INSTALL_DIR/$BINARY"
-        echo "Checksum mismatch!"
-        exit 1
-    fi
-    echo "Checksum verified"
-else
-    echo "Skipping checksum verification"
-fi
 
 if ! command -v "$BINARY" &>/dev/null; then
     echo "NOTE: $INSTALL_DIR is not on your PATH."

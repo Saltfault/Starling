@@ -32,7 +32,7 @@ if ($Uninstall) {
 if ($Upgrade) { Write-Host "Upgrading $Binary to $Version..." -ForegroundColor Cyan }
 
 if ($Version -eq "latest") {
-    $release = Invoke-RestMethod "$ForgejoBase/$Repo/releases/latest"
+    $release = Invoke-RestMethod "https://forgejo.hearthhome.lol/api/v1/repos/Saltfault/$Repo/releases/latest"
     $Tag = $release.tag_name
 } else { $Tag = $Version }
 
