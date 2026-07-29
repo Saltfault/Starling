@@ -163,27 +163,26 @@ fn main() -> anyhow::Result<()> {
             Some("tui") => update_pkg("Starling TUI", REPO_TUI, "starling-tui"),
             Some("server") => update_pkg("Starling Server", REPO_SERVER, "starling-server"),
             None => {
-                let mut results: Vec<(&str, anyhow::Result<()>)> =
-                    vec![("launcher", download_self())];
+                let launcher_result = download_self();
+                let mut updated = vec![("launcher", launcher_result)];
                 if !tui_missing() {
-                    results.push(("tui", update_pkg("Starling TUI", REPO_TUI, "starling-tui")));
+                    updated.push(("tui", update_pkg("Starling TUI", REPO_TUI, "starling-tui")));
                 }
                 if !server_missing() {
-                    results.push((
+                    updated.push((
                         "server",
                         update_pkg("Starling Server", REPO_SERVER, "starling-server"),
                     ));
                 }
-                if results.len() == 1 {
-                    println!(
-                        "Nothing installed — run `starling install tui` or `starling install server` first."
-                    );
-                    return Ok(());
-                }
-                for (name, r) in &results {
+                for (name, r) in &updated {
                     println!(
                         "{name}: {}",
                         if r.is_ok() { "ok" } else { "failed (see log)" }
+                    );
+                }
+                if updated.len() == 1 {
+                    println!(
+                        "(only the launcher was updated — install components with `starling install tui` or `starling install server`)"
                     );
                 }
                 Ok(())
