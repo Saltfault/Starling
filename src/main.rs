@@ -35,14 +35,24 @@ fn main() -> anyhow::Result<()> {
             Some("tui") => update_pkg("Starling TUI", URL_TUI, install_deps_tui),
             Some("server") => update_pkg("Starling Server", URL_SERVER, install_deps_server),
             None => {
-                let results = [
-                    ("launcher", update_self()),
-                    ("tui", update_pkg("Starling TUI", URL_TUI, install_deps_tui)),
-                    (
+                let mut results: Vec<(&str, anyhow::Result<()>)> =
+                    vec![("launcher", update_self())];
+                if !tui_missing() {
+                    results.push((
+                        "tui",
+                        update_pkg("Starling TUI", URL_TUI, install_deps_tui),
+                    ));
+                }
+                if !server_missing() {
+                    results.push((
                         "server",
                         update_pkg("Starling Server", URL_SERVER, install_deps_server),
-                    ),
-                ];
+                    ));
+                }
+                if results.len() == 1 {
+                    println!("Nothing installed — run `starling install tui` or `starling install server` first.");
+                    return Ok(());
+                }
                 for (name, r) in &results {
                     println!(
                         "{name}: {}",
@@ -292,6 +302,15 @@ fn main() -> anyhow::Result<()> {
 
 fn tui_missing() -> bool {
     std::process::Command::new("starling-tui")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_err()
+}
+
+fn server_missing() -> bool {
+    std::process::Command::new("starling-server")
         .arg("--version")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())

@@ -82,6 +82,7 @@ pub enum GossipPayload {
         id: EndpointId,
         name: String,
         dm_pk: Vec<u8>,
+        pronouns: String,
     },
     /// `id` MUST equal `Signed::author`; mismatched status claims are dropped.
     Status {
