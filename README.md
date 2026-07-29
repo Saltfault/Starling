@@ -12,34 +12,29 @@ This is the **main repo** — you install it, and it installs the rest.
 
 ## Install
 
-Pick your component — each installs with one command. No Rust or compiler needed.
-
-### Terminal client (`starling-tui`)
+Install the `starling` launcher — then it installs everything else. No Rust or compiler needed.
 
 **Windows (PowerShell):**
 ```powershell
-irm https://forgejo.hearthhome.lol/Saltfault/Starling-TUI/releases/latest/download/install.ps1 | iex
+irm https://forgejo.hearthhome.lol/Saltfault/Starling/releases/latest/download/install.ps1 | iex
 ```
 
 **Linux / macOS:**
 ```bash
-curl -sSfL https://forgejo.hearthhome.lol/Saltfault/Starling-TUI/releases/latest/download/install.sh | bash
+curl -sSfL https://forgejo.hearthhome.lol/Saltfault/Starling/releases/latest/download/install.sh | bash
 ```
 
-### Roost server (`starling-server`)
+Then use it to install the components you want:
 
-**Windows (PowerShell):**
-```powershell
-irm https://forgejo.hearthhome.lol/Saltfault/Starling-Server/releases/latest/download/install.ps1 | iex
-```
-
-**Linux / macOS:**
 ```bash
-curl -sSfL https://forgejo.hearthhome.lol/Saltfault/Starling-Server/releases/latest/download/install.sh | bash
+starling install tui        # terminal client (chat, voice, video)
+starling install server     # roost server (host a community)
 ```
+
+The launcher downloads prebuilt binaries — no compilation. Each component can also be installed directly from its own repo if you prefer.
 
 Run `starling-tui` to launch the client, `starling-server --help` for server commands.
-Upgrade: re-run the same command. Uninstall: `install.sh --uninstall` or `install.ps1 -Uninstall`.
+Upgrade everything: `starling update`. Uninstall a component: `starling tui uninstall`.
 
 > **Building from source?** You need Rust and a C compiler. See the per-platform setup in [Starling-TUI](https://forgejo.hearthhome.lol/Saltfault/Starling-TUI#platform-setup).
 ---
