@@ -12,38 +12,36 @@ This is the **main repo** — you install it, and it installs the rest.
 
 ## Install
 
-You install **Starling** once. That gives you the `starling` command, which then installs and manages the individual components.
+Pick your component — each installs with one command. No Rust or compiler needed.
 
-**Prerequisites:** Rust and a C compiler. See [platform setup](https://forgejo.hearthhome.lol/Saltfault/Starling-TUI#platform-setup) for the per-OS steps (they're the same for every component).
+### Terminal client (`starling-tui`)
 
-```bash
-# 1. Install the Starling launcher
-cargo install --git https://forgejo.hearthhome.lol/Saltfault/Starling.git
-
-# 2. Install the components you want
-starling install tui        # the terminal client (chat, voice, video)
-starling install server     # the roost server (host a community)
+**Windows (PowerShell):**
+```powershell
+irm https://forgejo.hearthhome.lol/Saltfault/Starling-TUI/releases/latest/download/install.ps1 | iex
 ```
 
-Then use them through the same `starling` command:
-
+**Linux / macOS:**
 ```bash
-starling profile            # one-time profile + audio wizard
-starling open               # launch the client (bare `starling` prints help)
-starling join BIRD-...      # join a flock by invite code
-starling roost create my-community   # create a roost (needs `install server`)
+curl -sSfL https://forgejo.hearthhome.lol/Saltfault/Starling-TUI/releases/latest/download/install.sh | bash
 ```
 
-| Component | Get it with | Status |
-|-----------|-------------|--------|
-| Terminal client | `starling install tui` | 🚧 Active |
-| Roost server | `starling install server` | 🚧 Active |
-| Desktop app | Download the installer | 📋 Planned |
-| Android app | Android package (app store / APK) | 📋 Planned |
-| Web app | Just a hosted page — nothing to install | 📋 Planned |
+### Roost server (`starling-server`)
 
-The `starling install` command only handles the command-line components (TUI and server). The Desktop, Android, and Web apps are graphical apps with no CLI — they're downloaded and installed the way those platforms expect.
+**Windows (PowerShell):**
+```powershell
+irm https://forgejo.hearthhome.lol/Saltfault/Starling-Server/releases/latest/download/install.ps1 | iex
+```
 
+**Linux / macOS:**
+```bash
+curl -sSfL https://forgejo.hearthhome.lol/Saltfault/Starling-Server/releases/latest/download/install.sh | bash
+```
+
+Run `starling-tui` to launch the client, `starling-server --help` for server commands.
+Upgrade: re-run the same command. Uninstall: `install.sh --uninstall` or `install.ps1 -Uninstall`.
+
+> **Building from source?** You need Rust and a C compiler. See the per-platform setup in [Starling-TUI](https://forgejo.hearthhome.lol/Saltfault/Starling-TUI#platform-setup).
 ---
 
 ## Where do I go?
