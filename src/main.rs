@@ -387,23 +387,46 @@ fn main() -> anyhow::Result<()> {
             }
         },
         Some("uninstall") => {
-            let dir = config_dir();
-            if !dir.exists() {
-                println!("No Starling data found at {}", dir.display());
-                return Ok(());
-            }
             let force = args.get(2).map(String::as_str) == Some("--force");
             if !force {
-                eprintln!("This will delete ALL Starling data:");
-                eprintln!("  {}", dir.display());
-                eprintln!("  (profiles, identity keys, roosts, logs, history)");
+                eprintln!("This will delete ALL Starling binaries and data:");
+                eprintln!("  (launcher, TUI, server, profiles, roosts, logs, history)");
                 eprintln!();
                 eprintln!("Run 'starling uninstall --force' to confirm.");
                 std::process::exit(1);
             }
-            println!("Deleting all Starling data...");
-            std::fs::remove_dir_all(&dir)?;
-            println!("✓ All Starling data deleted from {}", dir.display());
+            // Remove components first
+            if !tui_missing() {
+                let _ = uninstall_pkg("starling-tui", "Starling TUI");
+            }
+            if !server_missing() {
+                let _ = uninstall_pkg("starling-server", "Starling Server");
+            }
+            // Remove the launcher itself
+            let ext = if cfg!(target_os = "windows") {
+                ".exe"
+            } else {
+                ""
+            };
+            let me = cargo_bin_dir().join(format!("starling{ext}"));
+            if me.exists() {
+                if cfg!(windows) {
+                    // Schedule deletion after exit via batch file
+                    let script = cargo_bin_dir().join("starling-cleanup.bat");
+                    std::fs::write(
+                        &script,
+                        format!(
+                            "@echo off\r\ntimeout /t 1 /nobreak >nul\r\ndel /F \"{}\"\r\ndel \"%~f0\"\r\n",
+                            me.display()
+                        ),
+                    )?;
+                    std::process::Command::new("cmd")
+                        .args(["/C", &script.to_string_lossy()])
+                        .spawn()?;
+                } else {
+                    std::fs::remove_file(&me)?;
+                }
+            }
             Ok(())
         }
         Some("--version") | Some("-V") => {
