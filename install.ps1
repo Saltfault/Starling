@@ -1,6 +1,6 @@
 # Starling launcher installer — Windows (PowerShell)
 # Usage:
-#   irm https://forgejo.hearthhome.lol/Saltfault/Starling/releases/download/v<VERSION>/install.ps1 | iex
+#   irm https://forgejo.hearthhome.lol/Saltfault/Starling/raw/branch/main/install.ps1 | iex
 
 param(
     [string]$Version = "latest",

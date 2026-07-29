@@ -16,12 +16,12 @@ Install the `starling` launcher — then it installs everything else. No Rust or
 
 **Windows (PowerShell):**
 ```powershell
-irm https://forgejo.hearthhome.lol/Saltfault/Starling/releases/latest/download/install.ps1 | iex
+irm https://forgejo.hearthhome.lol/Saltfault/Starling/raw/branch/main/install.ps1 | iex
 ```
 
 **Linux / macOS:**
 ```bash
-curl -sSfL https://forgejo.hearthhome.lol/Saltfault/Starling/releases/latest/download/install.sh | bash
+curl -sSfL https://forgejo.hearthhome.lol/Saltfault/Starling/raw/branch/main/install.sh | bash
 ```
 
 Then use it to install the components you want:
@@ -37,7 +37,6 @@ Run `starling-tui` to launch the client, `starling-server --help` for server com
 Upgrade everything: `starling update`. Uninstall a component: `starling tui uninstall`.
 
 > **Building from source?** You need Rust and a C compiler. See the per-platform setup in [Starling-TUI](https://forgejo.hearthhome.lol/Saltfault/Starling-TUI#platform-setup).
----
 
 ## Where do I go?
 

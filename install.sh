@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Starling launcher installer — Linux / macOS
 # Usage:
-#   curl -sSfL https://forgejo.hearthhome.lol/Saltfault/Starling/releases/download/v<VERSION>/install.sh | bash
+#   curl -sSfL https://forgejo.hearthhome.lol/Saltfault/Starling/raw/branch/main/install.sh | bash
 
 set -euo pipefail
 
