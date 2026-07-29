@@ -99,7 +99,9 @@ jobs:
             ext=""
             [[ "$target" == *-windows-* ]] && ext=".exe"
             cp "target/$target/release/starling$ext" "starling-$target$ext"
+            sha256sum "starling-$target$ext" > "starling-$target.sha256"
           done
+          cp install.sh install.ps1 .
 
       - name: Download macOS from GitHub Release
         env:
