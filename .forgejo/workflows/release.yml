@@ -33,7 +33,8 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ "$current" = "$latest_tag" ]; then
+          # Skip only if a release already exists for this version (not just the tag)
+          if [ "$current" = "$latest_tag" ] && curl -sf "https://forgejo.hearthhome.lol/api/v1/repos/Saltfault/Starling/releases/tags/$current" > /dev/null 2>&1; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
