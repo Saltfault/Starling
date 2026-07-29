@@ -1,20 +1,120 @@
-const URL_STARLING: &str = "https://forgejo.hearthhome.lol/Saltfault/Starling.git";
-const URL_TUI: &str = "https://forgejo.hearthhome.lol/Saltfault/Starling-TUI.git";
-const URL_SERVER: &str = "https://forgejo.hearthhome.lol/Saltfault/Starling-Server.git";
+use sha2::Digest;
+use std::io::Read;
+
+const BASE_URL: &str = "https://forgejo.hearthhome.lol/Saltfault";
+const REPO_STARLING: &str = "Starling";
+const REPO_TUI: &str = "Starling-TUI";
+const REPO_SERVER: &str = "Starling-Server";
 
 /// Remove stale .old backup from a prior update that didn't clean up
 fn cleanup_old_backup() {
-    let home = std::env::var("USERPROFILE").unwrap_or_default();
-    if home.is_empty() {
-        return;
+    let bin = cargo_bin_dir().join("starling.old");
+    if bin.exists() {
+        let _ = std::fs::remove_file(&bin);
     }
-    let old = std::path::PathBuf::from(home)
-        .join(".cargo")
+}
+
+fn cargo_bin_dir() -> std::path::PathBuf {
+    std::env::var("CARGO_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME")
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .unwrap_or_default();
+            std::path::PathBuf::from(home).join(".cargo")
+        })
         .join("bin")
-        .join("starling.old");
-    if old.exists() {
-        let _ = std::fs::remove_file(&old);
+}
+
+fn host_target() -> &'static str {
+    if cfg!(target_os = "windows") { "x86_64-pc-windows-msvc" }
+    else if cfg!(target_os = "macos") {
+        if cfg!(target_arch = "aarch64") { "aarch64-apple-darwin" }
+        else { "x86_64-apple-darwin" }
     }
+    else {
+        if cfg!(target_arch = "aarch64") { "aarch64-unknown-linux-gnu" }
+        else { "x86_64-unknown-linux-gnu" }
+    }
+}
+
+fn download_binary(repo: &str, bin_name: &str) -> anyhow::Result<()> {
+    let target = host_target();
+    let ext = if cfg!(target_os = "windows") { ".exe" } else { "" };
+    let asset = format!("{bin_name}-{target}{ext}");
+    let tag = get_latest_tag(repo)?;
+    let url = format!("{BASE_URL}/{repo}/releases/download/{tag}/{asset}");
+    let dest = cargo_bin_dir().join(format!("{bin_name}{ext}"));
+
+    println!("Downloading {bin_name} {tag} ({target})...");
+    let resp = ureq::get(&url).call()
+        .map_err(|e| anyhow::anyhow!("download failed: {e}"))?;
+    let mut body: Vec<u8> = Vec::new();
+    resp.into_reader().read_to_end(&mut body)?;
+
+    // Verify checksum if available
+    let sha_url = format!("{BASE_URL}/{repo}/releases/download/{tag}/{bin_name}-{target}.sha256");
+    if let Ok(sha_resp) = ureq::get(&sha_url).call() {
+        let sha = sha_resp.into_string()?;
+        let expected = sha.split_whitespace().next().unwrap_or("");
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(&body);
+        let actual = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>();
+        if expected != actual {
+            anyhow::bail!("checksum mismatch for {bin_name}: expected {expected}, got {actual}");
+        }
+    }
+
+    let parent = dest.parent().unwrap();
+    std::fs::create_dir_all(parent)?;
+    if dest.exists() {
+        let backup = parent.join(format!("{bin_name}.old"));
+        let _ = std::fs::remove_file(&backup);
+        std::fs::rename(&dest, &backup)?;
+    }
+    std::fs::write(&dest, &body)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))?;
+    }
+    Ok(())
+}
+
+fn get_latest_tag(repo: &str) -> anyhow::Result<String> {
+    let url = format!("{BASE_URL}/api/v1/repos/Saltfault/{repo}/releases/latest");
+    let resp = ureq::get(&url).call()
+        .map_err(|e| anyhow::anyhow!("failed to fetch latest release: {e}"))?;
+    let json: serde_json::Value = resp.into_json()?;
+    json["tag_name"].as_str()
+        .map(String::from)
+        .ok_or_else(|| anyhow::anyhow!("no tag_name in release response"))
+}
+
+fn download_self() -> anyhow::Result<()> {
+    let current = std::env::current_exe()?;
+    let ext = if cfg!(target_os = "windows") { ".exe" } else { "" };
+
+    download_binary(REPO_STARLING, "starling")?;
+    let new_bin = cargo_bin_dir().join(format!("starling{ext}"));
+
+    // On Windows we can't overwrite the running exe directly, so we write a
+    // batch file that swaps the binaries after this process exits.
+    if cfg!(windows) && current == new_bin {
+        let script = cargo_bin_dir().join("starling-update.bat");
+        let old = cargo_bin_dir().join("starling.old");
+        std::fs::write(&script, format!(
+            "@echo off\r\n\
+             timeout /t 1 /nobreak >nul\r\n\
+             move /Y \"{}\" \"{}\"\r\n\
+             del \"%~f0\"\r\n",
+            old.display(), current.display()
+        ))?;
+        std::process::Command::new("cmd").args(["/C", &script.to_string_lossy()]).spawn()?;
+        std::process::exit(0);
+    }
+
+    Ok(())
 }
 
 fn main() -> anyhow::Result<()> {
@@ -24,33 +124,32 @@ fn main() -> anyhow::Result<()> {
 
     match cmd {
         Some("install") => match args.get(2).map(String::as_str) {
-            Some("tui") => install_pkg("Starling TUI", URL_TUI, install_deps_tui),
-            Some("server") => install_pkg("Starling Server", URL_SERVER, install_deps_server),
+            Some("tui") => install_pkg("Starling TUI", REPO_TUI, "starling-tui"),
+            Some("server") => install_pkg("Starling Server", REPO_SERVER, "starling-server"),
             _ => {
                 eprintln!("Usage: starling install <tui|server>");
                 std::process::exit(1);
             }
         },
         Some("update") => match args.get(2).map(String::as_str) {
-            Some("tui") => update_pkg("Starling TUI", URL_TUI, install_deps_tui),
-            Some("server") => update_pkg("Starling Server", URL_SERVER, install_deps_server),
+            Some("tui") => update_pkg("Starling TUI", REPO_TUI, "starling-tui"),
+            Some("server") => update_pkg("Starling Server", REPO_SERVER, "starling-server"),
             None => {
                 let mut results: Vec<(&str, anyhow::Result<()>)> =
-                    vec![("launcher", update_self())];
+                    vec![("launcher", download_self())];
                 if !tui_missing() {
-                    results.push((
-                        "tui",
-                        update_pkg("Starling TUI", URL_TUI, install_deps_tui),
-                    ));
+                    results.push(("tui", update_pkg("Starling TUI", REPO_TUI, "starling-tui")));
                 }
                 if !server_missing() {
                     results.push((
                         "server",
-                        update_pkg("Starling Server", URL_SERVER, install_deps_server),
+                        update_pkg("Starling Server", REPO_SERVER, "starling-server"),
                     ));
                 }
                 if results.len() == 1 {
-                    println!("Nothing installed — run `starling install tui` or `starling install server` first.");
+                    println!(
+                        "Nothing installed — run `starling install tui` or `starling install server` first."
+                    );
                     return Ok(());
                 }
                 for (name, r) in &results {
@@ -67,7 +166,6 @@ fn main() -> anyhow::Result<()> {
                 std::process::exit(1);
             }
         },
-
         Some("leave") => {
             if tui_missing() {
                 eprintln!("install the TUI first: starling install tui");
@@ -194,7 +292,7 @@ fn main() -> anyhow::Result<()> {
         }
         Some("tui") => match args.get(2).map(String::as_str) {
             Some("version") => exec("starling-tui", &["--version"]),
-            Some("update") => update_pkg("Starling TUI", URL_TUI, install_deps_tui),
+            Some("update") => update_pkg("Starling TUI", REPO_TUI, "starling-tui"),
             Some("uninstall") => uninstall_pkg("starling-tui", "Starling TUI"),
             _ => {
                 eprintln!("Usage: starling tui <version|update|uninstall>");
@@ -246,7 +344,7 @@ fn main() -> anyhow::Result<()> {
         }
         Some("server") => match args.get(2).map(String::as_str) {
             Some("version") => exec("starling-server", &["--version"]),
-            Some("update") => update_pkg("Starling Server", URL_SERVER, install_deps_server),
+            Some("update") => update_pkg("Starling Server", REPO_SERVER, "starling-server"),
             Some("uninstall") => {
                 uninstall_pkg("starling-server", "Starling Server")?;
                 if args.iter().any(|a| a == "--purge-data") {
@@ -261,7 +359,6 @@ fn main() -> anyhow::Result<()> {
                 std::process::exit(1);
             }
         },
-
         Some("uninstall") => {
             let dir = config_dir();
             if !dir.exists() {
@@ -339,55 +436,32 @@ fn config_dir() -> std::path::PathBuf {
     starling::config::Profile::config_dir()
 }
 
-fn cargo_install(url: &str) -> anyhow::Result<()> {
-    let mut command = std::process::Command::new("cargo");
-    // `--force` overwrites an existing install of the same version instead of
-    // erroring (cargo refuses without it once the binary is already on PATH),
-    // so `starling install tui` / `starling update tui` can re-run in place.
-    command.args(["install", "--jobs", "2", "--force", "--git", url]);
-    if url == URL_TUI {
-        command.args(["--features", "audio,video"]);
-    } else if url == URL_SERVER {
-        command.arg("--no-default-features");
-    }
-    let status = command
-        .status()
-        .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
-    if status.success() {
-        Ok(())
-    } else {
-        anyhow::bail!("cargo install failed (exit code: {:?})", status.code())
-    }
-}
 
-fn install_pkg(name: &str, url: &str, deps: fn() -> anyhow::Result<()>) -> anyhow::Result<()> {
-    deps()?;
+fn install_pkg(name: &str, repo: &str, bin: &str) -> anyhow::Result<()> {
     println!("Installing {name}...");
-    cargo_install(url)?;
+    download_binary(repo, bin)?;
     println!("✓ {name} installed");
     Ok(())
 }
 
-fn update_pkg(name: &str, url: &str, deps: fn() -> anyhow::Result<()>) -> anyhow::Result<()> {
-    deps()?;
+fn update_pkg(name: &str, repo: &str, bin: &str) -> anyhow::Result<()> {
     println!("Updating {name}...");
-    cargo_install(url)?;
+    download_binary(repo, bin)?;
     println!("✓ {name} updated to the latest version");
     Ok(())
 }
 
 fn uninstall_pkg(bin: &str, name: &str) -> anyhow::Result<()> {
     println!("Uninstalling {name}...");
-    let status = std::process::Command::new("cargo")
-        .args(["uninstall", bin])
-        .status()
-        .map_err(|e| anyhow::anyhow!("failed to run cargo: {e}"))?;
-    if status.success() {
+    let ext = if cfg!(target_os = "windows") { ".exe" } else { "" };
+    let path = cargo_bin_dir().join(format!("{bin}{ext}"));
+    if path.exists() {
+        std::fs::remove_file(&path)?;
         println!("✓ {name} uninstalled (profile and data preserved)");
-        Ok(())
     } else {
-        anyhow::bail!("uninstall failed (exit code: {:?})", status.code());
+        println!("{name} was not installed");
     }
+    Ok(())
 }
 
 fn remove_server_data() -> anyhow::Result<()> {
@@ -413,6 +487,7 @@ fn remove_server_data() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn run_shell(cmd: &str, args: &[&str]) -> anyhow::Result<()> {
     let status = std::process::Command::new(cmd)
         .args(args)
@@ -572,55 +647,6 @@ fn install_deps_server() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn update_self() -> anyhow::Result<()> {
-    if cfg!(windows) {
-        println!("Updating Starling...");
-        let script = format!(
-            r#"$exe = "$env:USERPROFILE\.cargo\bin\starling.exe"
-$old = "$env:USERPROFILE\.cargo\bin\starling.old"
-try {{
-    Move-Item $exe $old -Force
-    cargo install --jobs 2 --git {URL_STARLING}
-    if ($LASTEXITCODE -ne 0) {{ throw "cargo install failed with exit code $LASTEXITCODE" }}
-    Remove-Item $old -ErrorAction SilentlyContinue
-    exit 0
-}}
-catch {{
-    if (Test-Path $old) {{ Move-Item $old $exe -Force }}
-    exit 1
-}}"#
-        );
-        let ps = std::env::temp_dir().join(format!("starling-update-{}.ps1", uuid::Uuid::new_v4()));
-        let mut script_file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&ps)
-            .map_err(|e| anyhow::anyhow!("failed to create updater script: {e}"))?;
-        std::io::Write::write_all(&mut script_file, script.as_bytes())
-            .and_then(|()| script_file.sync_all())
-            .map_err(|e| anyhow::anyhow!("failed to write updater script: {e}"))?;
-        drop(script_file);
-        let status = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
-            .arg(&ps)
-            .status();
-        let _ = std::fs::remove_file(&ps);
-        let status = status.map_err(|e| anyhow::anyhow!("failed to run PowerShell: {e}"))?;
-        if status.success() {
-            println!("✓ Starling updated to the latest version");
-            Ok(())
-        } else {
-            eprintln!("Update failed. To update manually, run:");
-            eprintln!("  cargo install --git {URL_STARLING}");
-            anyhow::bail!("update failed (exit code: {:?})", status.code());
-        }
-    } else {
-        println!("Updating Starling...");
-        cargo_install(URL_STARLING)?;
-        println!("✓ Starling updated to the latest version");
-        Ok(())
-    }
-}
 
 fn run_headless_profile_editor(args: &[String]) -> anyhow::Result<()> {
     match args.get(2).map(String::as_str) {
