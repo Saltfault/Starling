@@ -763,49 +763,71 @@ fn print_roost_help() {
 }
 
 fn print_help() {
+    let has_tui = !tui_missing();
+    let has_server = !server_missing();
+
     println!(
         "Starling v{} — federated p2p communications",
         env!("CARGO_PKG_VERSION")
     );
     println!();
+
+    // ── always available ──
     println!("Usage:");
     println!("  starling install tui            install the TUI client");
     println!("  starling install server         install the headless roost server");
     println!();
+    println!("  starling update                 update the launcher");
+    if has_tui {
+        println!("  starling update tui             update the TUI");
+    }
+    if has_server {
+        println!("  starling update server          update the Server");
+    }
+    println!();
+    println!("  starling uninstall --force      delete ALL Starling data and binaries");
+    println!("  starling help                   print this help");
+    println!("  starling --version              print launcher version");
+    println!();
+
+    // ── profile (always, headless fallback) ──
+    println!("Profile:");
     println!("  starling profile                configure profile (headless fallback)");
     println!("  starling profile show           display current profile");
     println!("  starling profile set <f> <v>    set a profile field non-interactively");
-    println!("  starling join <code>            join a flock or roost");
-    println!("  starling open                   open the TUI");
-    println!("  starling leave <code>           leave a flock or roost");
-    println!("  starling list                   list roosts on disk");
-    println!("  starling doctor                 diagnose setup");
-    println!("  starling logs                   show log file path");
-    println!("  starling tui version            print TUI version");
-    println!("  starling tui update             update the TUI");
-    println!("  starling tui uninstall          uninstall the TUI");
     println!();
-    println!("  starling roost create   <name>  create a new roost");
-    println!("  starling roost open     <name>  start a roost (blocks)");
-    println!("  starling roost close    <name>  stop a running roost");
-    println!("  starling roost destroy  <name>  delete a roost and all data");
-    println!("  starling roost setup    <name>  alias for create");
-    println!("  starling roost invite   <name>  show invite code");
-    println!("  starling roost status   <name>  show roost info");
-    println!("  starling roost doctor   <name>  diagnose a roost");
-    println!("  starling roost logs     <name>  show log info");
-    println!("  starling roost members  <name>  list members (coming)");
-    println!("  starling roost channel add <n> <ch>    add a channel (coming)");
-    println!("  starling roost channel remove <n> <ch> remove a channel (coming)");
-    println!("  starling server version        print Server version");
-    println!("  starling server update         update the Server");
-    println!("  starling server uninstall      uninstall the Server");
-    println!();
-    println!("  starling uninstall              delete ALL Starling data (requires --force)");
-    println!();
-    println!("  starling update                update Starling, TUI, and Server");
-    println!("  starling update tui            update only the TUI");
-    println!("  starling update server         update only the Server");
-    println!("  starling help                  print this help");
-    println!("  starling --version              print launcher version");
+
+    if has_tui {
+        println!("TUI client:");
+        println!("  starling open                   open the TUI");
+        println!("  starling join <code>            join a flock or roost");
+        println!("  starling leave <code>           leave a flock or roost");
+        println!("  starling tui version            print TUI version");
+        println!("  starling tui uninstall          uninstall the TUI");
+        println!();
+    }
+
+    if has_server {
+        println!("Roost server:");
+        println!("  starling list                   list roosts on disk");
+        println!("  starling doctor                 diagnose setup");
+        println!("  starling logs                   show log file path");
+        println!("  starling server version         print Server version");
+        println!("  starling server uninstall       uninstall the Server");
+        println!();
+        println!("  starling roost create   <name>  create a new roost");
+        println!("  starling roost open     <name>  start a roost (blocks)");
+        println!("  starling roost close    <name>  stop a running roost");
+        println!("  starling roost destroy  <name>  delete a roost and all data");
+        println!("  starling roost setup    <name>  alias for create");
+        println!("  starling roost invite   <name>  show invite code");
+        println!("  starling roost status   <name>  show roost info");
+        println!("  starling roost doctor   <name>  diagnose a roost");
+        println!("  starling roost logs     <name>  show log info");
+        println!();
+    }
+
+    if !has_tui && !has_server {
+        println!("Run `starling install tui` or `starling install server` to get started.");
+    }
 }
