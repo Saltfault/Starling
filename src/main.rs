@@ -27,27 +27,38 @@ fn cargo_bin_dir() -> std::path::PathBuf {
 }
 
 fn host_target() -> &'static str {
-    if cfg!(target_os = "windows") { "x86_64-pc-windows-msvc" }
-    else if cfg!(target_os = "macos") {
-        if cfg!(target_arch = "aarch64") { "aarch64-apple-darwin" }
-        else { "x86_64-apple-darwin" }
-    }
-    else {
-        if cfg!(target_arch = "aarch64") { "aarch64-unknown-linux-gnu" }
-        else { "x86_64-unknown-linux-gnu" }
+    if cfg!(target_os = "windows") {
+        "x86_64-pc-windows-msvc"
+    } else if cfg!(target_os = "macos") {
+        if cfg!(target_arch = "aarch64") {
+            "aarch64-apple-darwin"
+        } else {
+            "x86_64-apple-darwin"
+        }
+    } else {
+        if cfg!(target_arch = "aarch64") {
+            "aarch64-unknown-linux-gnu"
+        } else {
+            "x86_64-unknown-linux-gnu"
+        }
     }
 }
 
 fn download_binary(repo: &str, bin_name: &str) -> anyhow::Result<()> {
     let target = host_target();
-    let ext = if cfg!(target_os = "windows") { ".exe" } else { "" };
+    let ext = if cfg!(target_os = "windows") {
+        ".exe"
+    } else {
+        ""
+    };
     let asset = format!("{bin_name}-{target}{ext}");
     let tag = get_latest_tag(repo)?;
     let url = format!("{BASE_URL}/{repo}/releases/download/{tag}/{asset}");
     let dest = cargo_bin_dir().join(format!("{bin_name}{ext}"));
 
     println!("Downloading {bin_name} {tag} ({target})...");
-    let resp = ureq::get(&url).call()
+    let resp = ureq::get(&url)
+        .call()
         .map_err(|e| anyhow::anyhow!("download failed: {e}"))?;
     let mut body: Vec<u8> = Vec::new();
     resp.into_reader().read_to_end(&mut body)?;
@@ -59,7 +70,11 @@ fn download_binary(repo: &str, bin_name: &str) -> anyhow::Result<()> {
         let expected = sha.split_whitespace().next().unwrap_or("");
         let mut hasher = sha2::Sha256::new();
         hasher.update(&body);
-        let actual = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>();
+        let actual = hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
         if expected != actual {
             anyhow::bail!("checksum mismatch for {bin_name}: expected {expected}, got {actual}");
         }
@@ -83,17 +98,23 @@ fn download_binary(repo: &str, bin_name: &str) -> anyhow::Result<()> {
 
 fn get_latest_tag(repo: &str) -> anyhow::Result<String> {
     let url = format!("{BASE_URL}/api/v1/repos/Saltfault/{repo}/releases/latest");
-    let resp = ureq::get(&url).call()
+    let resp = ureq::get(&url)
+        .call()
         .map_err(|e| anyhow::anyhow!("failed to fetch latest release: {e}"))?;
     let json: serde_json::Value = resp.into_json()?;
-    json["tag_name"].as_str()
+    json["tag_name"]
+        .as_str()
         .map(String::from)
         .ok_or_else(|| anyhow::anyhow!("no tag_name in release response"))
 }
 
 fn download_self() -> anyhow::Result<()> {
     let current = std::env::current_exe()?;
-    let ext = if cfg!(target_os = "windows") { ".exe" } else { "" };
+    let ext = if cfg!(target_os = "windows") {
+        ".exe"
+    } else {
+        ""
+    };
 
     download_binary(REPO_STARLING, "starling")?;
     let new_bin = cargo_bin_dir().join(format!("starling{ext}"));
@@ -103,14 +124,20 @@ fn download_self() -> anyhow::Result<()> {
     if cfg!(windows) && current == new_bin {
         let script = cargo_bin_dir().join("starling-update.bat");
         let old = cargo_bin_dir().join("starling.old");
-        std::fs::write(&script, format!(
-            "@echo off\r\n\
+        std::fs::write(
+            &script,
+            format!(
+                "@echo off\r\n\
              timeout /t 1 /nobreak >nul\r\n\
              move /Y \"{}\" \"{}\"\r\n\
              del \"%~f0\"\r\n",
-            old.display(), current.display()
-        ))?;
-        std::process::Command::new("cmd").args(["/C", &script.to_string_lossy()]).spawn()?;
+                old.display(),
+                current.display()
+            ),
+        )?;
+        std::process::Command::new("cmd")
+            .args(["/C", &script.to_string_lossy()])
+            .spawn()?;
         std::process::exit(0);
     }
 
@@ -436,7 +463,6 @@ fn config_dir() -> std::path::PathBuf {
     starling::config::Profile::config_dir()
 }
 
-
 fn install_pkg(name: &str, repo: &str, bin: &str) -> anyhow::Result<()> {
     println!("Installing {name}...");
     download_binary(repo, bin)?;
@@ -453,7 +479,11 @@ fn update_pkg(name: &str, repo: &str, bin: &str) -> anyhow::Result<()> {
 
 fn uninstall_pkg(bin: &str, name: &str) -> anyhow::Result<()> {
     println!("Uninstalling {name}...");
-    let ext = if cfg!(target_os = "windows") { ".exe" } else { "" };
+    let ext = if cfg!(target_os = "windows") {
+        ".exe"
+    } else {
+        ""
+    };
     let path = cargo_bin_dir().join(format!("{bin}{ext}"));
     if path.exists() {
         std::fs::remove_file(&path)?;
@@ -486,167 +516,6 @@ fn remove_server_data() -> anyhow::Result<()> {
     }
     Ok(())
 }
-
-#[allow(dead_code)]
-fn run_shell(cmd: &str, args: &[&str]) -> anyhow::Result<()> {
-    let status = std::process::Command::new(cmd)
-        .args(args)
-        .status()
-        .map_err(|e| anyhow::anyhow!("failed to run {cmd}: {e}"))?;
-    if !status.success() {
-        anyhow::bail!("{cmd} failed (exit code: {:?})", status.code());
-    }
-    Ok(())
-}
-
-fn install_linux_deps(packages: &[&str], extra_wsl: Option<&[&str]>) -> anyhow::Result<()> {
-    if std::process::Command::new("apt-get")
-        .arg("--version")
-        .output()
-        .is_ok()
-    {
-        println!("Detected Debian/Ubuntu/WSL — installing...");
-        run_shell("sudo", &["apt-get", "update"])?;
-        let mut apt = vec!["apt-get", "install", "-y"];
-        apt.extend(packages);
-        run_shell("sudo", &apt)?;
-        if let Some(wsl_pkgs) = extra_wsl
-            && std::path::Path::new("/mnt/wslg").exists()
-            && !std::path::Path::new("/etc/asound.conf").exists()
-        {
-            println!("Setting up WSL2 audio bridge...");
-            let mut wsl = vec!["apt-get", "install", "-y"];
-            wsl.extend(wsl_pkgs);
-            run_shell("sudo", &wsl)?;
-            let conf = "pcm.!default {\ntype pulse\n}\nctl.!default {\ntype pulse\n}\n";
-            run_shell(
-                "sudo",
-                &[
-                    "sh",
-                    "-c",
-                    &format!(
-                        "printf '%s' '{}' > /etc/asound.conf",
-                        conf.replace('\'', "'\\''"),
-                    ),
-                ],
-            )?;
-            println!("WSL2 audio bridge installed.");
-        }
-    } else if std::process::Command::new("dnf")
-        .arg("--version")
-        .output()
-        .is_ok()
-    {
-        println!("Detected Fedora — installing...");
-        let mut dnf = vec!["dnf", "install", "-y"];
-        dnf.extend(packages);
-        run_shell("sudo", &dnf)?;
-    } else if std::process::Command::new("pacman")
-        .arg("--version")
-        .output()
-        .is_ok()
-    {
-        println!("Detected Arch — installing...");
-        let mut pac = vec!["pacman", "-S", "--needed", "--noconfirm"];
-        pac.extend(packages);
-        run_shell("sudo", &pac)?;
-    } else {
-        eprintln!("Could not detect a supported package manager.");
-        return Err(anyhow::anyhow!("unsupported package manager"));
-    }
-    Ok(())
-}
-
-fn install_deps_tui() -> anyhow::Result<()> {
-    if cfg!(target_os = "linux") {
-        let r = install_linux_deps(
-            &[
-                "build-essential",
-                "pkg-config",
-                "libasound2-dev",
-                "libpulse-dev",
-                "libclang-dev",
-                "libv4l-dev",
-            ],
-            Some(&["libasound2-plugins"]),
-        );
-        if let Err(e) = r {
-            eprintln!(
-                "Please install manually: gcc, pkg-config, alsa-lib-dev, pulseaudio-dev, libclang-dev, libv4l-dev"
-            );
-            return Err(e);
-        }
-    } else if cfg!(target_os = "macos") {
-        if std::process::Command::new("brew")
-            .arg("--version")
-            .output()
-            .is_ok()
-        {
-            println!("Detected macOS (Homebrew) — installing...");
-            run_shell("brew", &["install", "pkg-config"])?;
-        } else {
-            eprintln!("Please install Homebrew first: https://brew.sh");
-            eprintln!("Then run: brew install pkg-config");
-            std::process::exit(1);
-        }
-    } else if cfg!(target_os = "windows") {
-        println!("On Windows, install Visual Studio Build Tools:");
-        println!("  https://visualstudio.microsoft.com/visual-cpp-build-tools/");
-        println!("Select 'Desktop development with C++'.");
-    }
-    println!("✓ TUI system dependencies installed");
-    Ok(())
-}
-
-fn install_deps_server() -> anyhow::Result<()> {
-    if cfg!(target_os = "linux") {
-        let r = install_linux_deps(&["build-essential", "pkg-config"], None);
-        if let Err(e) = r {
-            eprintln!("Please install manually: gcc, pkg-config");
-            return Err(e);
-        }
-    } else if cfg!(target_os = "macos") {
-        if std::process::Command::new("brew")
-            .arg("--version")
-            .output()
-            .is_ok()
-        {
-            println!("Detected macOS (Homebrew) — installing...");
-            run_shell("brew", &["install", "pkg-config"])?;
-        } else {
-            eprintln!("Please install Homebrew first: https://brew.sh");
-            eprintln!("Then run: brew install pkg-config");
-            std::process::exit(1);
-        }
-    } else if cfg!(target_os = "windows") {
-        if std::process::Command::new("winget")
-            .arg("--version")
-            .output()
-            .is_ok()
-        {
-            println!("Detected winget — installing VS Build Tools...");
-            run_shell(
-                "winget",
-                &[
-                    "install",
-                    "--id",
-                    "Microsoft.VisualStudio.2022.BuildTools",
-                    "--silent",
-                    "--accept-package-agreements",
-                    "--override",
-                    "--wait --quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended",
-                ],
-            )?;
-        } else {
-            println!("On Windows, install Visual Studio Build Tools:");
-            println!("  https://visualstudio.microsoft.com/visual-cpp-build-tools/");
-            println!("Select 'Desktop development with C++'.");
-        }
-    }
-    println!("✓ Server system dependencies installed");
-    Ok(())
-}
-
 
 fn run_headless_profile_editor(args: &[String]) -> anyhow::Result<()> {
     match args.get(2).map(String::as_str) {
