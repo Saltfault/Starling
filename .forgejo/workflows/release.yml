@@ -20,7 +20,7 @@ jobs:
       - name: Install Rust
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          cargo install kache --locked
+          $HOME/.cargo/bin/cargo install kache --locked
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
       - name: Extract version
         id: version
@@ -60,7 +60,7 @@ jobs:
       - name: Install Rust
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          cargo install kache --locked
+          $HOME/.cargo/bin/cargo install kache --locked
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           export PATH="$HOME/.cargo/bin:$PATH"
 
