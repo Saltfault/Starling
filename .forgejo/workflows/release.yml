@@ -6,7 +6,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTC_WRAPPER: kache
 jobs:
   detect:
     runs-on: ubuntu-latest
@@ -41,13 +40,19 @@ jobs:
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
       - name: Check formatting
+        env:
+          RUSTC_WRAPPER: kache
         run: cargo fmt --check
       - name: Clippy
+        env:
+          RUSTC_WRAPPER: kache
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Install system dependencies
         run: apt-get update && apt-get install -y libasound2-dev libclang-dev
       - name: Run tests
         if: steps.check.outputs.skip == 'false'
+        env:
+          RUSTC_WRAPPER: kache
         run: cargo test --all-features
 
   release:
@@ -79,6 +84,8 @@ jobs:
             musl-tools
           update-alternatives --set ld /usr/bin/x86_64-linux-gnu-ld 2>/dev/null || true
 
+        env:
+          RUSTC_WRAPPER: kache
       - name: Build all targets
         run: |
           set -e
