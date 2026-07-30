@@ -59,10 +59,18 @@ pub fn encode_typed_code(code_type: CodeType, payload: &[u8]) -> String {
 
 pub fn decode_typed_code(code: &str) -> Option<TypedCode> {
     let normalized = code.trim().to_ascii_uppercase();
-    if normalized.is_empty() || normalized.contains('-') {
+    if normalized.is_empty() {
         return None;
     }
-    let bytes = HEXUPPER.decode(normalized.as_bytes()).ok()?;
+    // Strip legacy BIRD- prefix and dashes from old-format room codes
+    let cleaned = if normalized.starts_with("BIRD-") {
+        normalized.replace('-', "")
+    } else if normalized.contains('-') {
+        return None;
+    } else {
+        normalized
+    };
+    let bytes = HEXUPPER.decode(cleaned.as_bytes()).ok()?;
     let (&tag, payload) = bytes.split_first()?;
     if payload.is_empty() {
         return None;
