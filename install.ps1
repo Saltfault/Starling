@@ -45,8 +45,8 @@ $outPath = Join-Path $InstallDir "$Binary$ext"
 Invoke-WebRequest -Uri $url -OutFile $outPath
 
 $shaUrl = "$ForgejoBase/$Repo/releases/download/$Tag/$Binary-$target.sha256"
-$shaResp = Invoke-WebRequest -Uri $shaUrl -UseBasicParsing -ErrorAction SilentlyContinue
-if ($shaResp -and $shaResp.StatusCode -eq 200) {
+try {
+    $shaResp = Invoke-WebRequest -Uri $shaUrl -UseBasicParsing
     $expected = $shaResp.Content.Split(" ")[0].Trim()
     $actual = (Get-FileHash $outPath -Algorithm SHA256).Hash.ToLower()
     if ($expected -ne $actual) {
@@ -54,7 +54,7 @@ if ($shaResp -and $shaResp.StatusCode -eq 200) {
         throw "Checksum mismatch! Expected $expected, got $actual"
     }
     Write-Host "Checksum verified" -ForegroundColor Green
-} else {
+} catch {
     Write-Host "No checksum file — skipping verification" -ForegroundColor Yellow
 }
 
