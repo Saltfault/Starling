@@ -29,7 +29,11 @@ fn cargo_bin_dir() -> std::path::PathBuf {
 
 fn host_target() -> &'static str {
     if cfg!(target_os = "windows") {
-        "x86_64-pc-windows-msvc"
+        if cfg!(target_arch = "aarch64") {
+            "aarch64-pc-windows-msvc"
+        } else {
+            "x86_64-pc-windows-msvc"
+        }
     } else if cfg!(target_os = "macos") {
         if cfg!(target_arch = "aarch64") {
             "aarch64-apple-darwin"
@@ -39,6 +43,10 @@ fn host_target() -> &'static str {
     } else {
         if cfg!(target_arch = "aarch64") {
             "aarch64-unknown-linux-gnu"
+        } else if cfg!(target_arch = "arm") {
+            "armv7-unknown-linux-gnueabihf"
+        } else if cfg!(target_arch = "x86") {
+            "i686-unknown-linux-gnu"
         } else {
             "x86_64-unknown-linux-gnu"
         }
@@ -81,14 +89,20 @@ fn download_binary(repo: &str, bin_name: &str) -> anyhow::Result<()> {
         }
     }
 
-    let parent = dest.parent().unwrap();
+    // Atomic install: write to temp, then rename over existing
+    let parent = dest
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("no parent dir for {dest:?}"))?;
     std::fs::create_dir_all(parent)?;
+    let tmp = parent.join(format!(".{bin_name}.tmp"));
+    let _ = std::fs::remove_file(&tmp);
+    std::fs::write(&tmp, &body)?;
     if dest.exists() {
         let backup = parent.join(format!("{bin_name}.old"));
         let _ = std::fs::remove_file(&backup);
         std::fs::rename(&dest, &backup)?;
     }
-    std::fs::write(&dest, &body)?;
+    std::fs::rename(&tmp, &dest)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -110,35 +124,29 @@ fn get_latest_tag(repo: &str) -> anyhow::Result<String> {
 }
 
 fn download_self() -> anyhow::Result<()> {
-    let current = std::env::current_exe()?;
-    let ext = if cfg!(target_os = "windows") {
-        ".exe"
-    } else {
-        ""
-    };
-
     download_binary(REPO_STARLING, "starling")?;
-    let new_bin = cargo_bin_dir().join(format!("starling{ext}"));
 
-    // On Windows we can't overwrite the running exe directly, so we write a
-    // batch file that swaps the binaries after this process exits.
-    if cfg!(windows) && current == new_bin {
-        let script = cargo_bin_dir().join("starling-update.bat");
+    // On Windows, download_binary already put the new binary in place and
+    // renamed the old one to .old. We just need to clean up the .old file
+    // after this process exits (can't delete while running).
+    if cfg!(windows) {
         let old = cargo_bin_dir().join("starling.old");
-        std::fs::write(
-            &script,
-            format!(
-                "@echo off\r\n\
-             timeout /t 1 /nobreak >nul\r\n\
-             move /Y \"{}\" \"{}\"\r\n\
-             del \"%~f0\"\r\n",
-                old.display(),
-                current.display()
-            ),
-        )?;
-        std::process::Command::new("cmd")
-            .args(["/C", &script.to_string_lossy()])
-            .spawn()?;
+        if old.exists() {
+            let script = cargo_bin_dir().join("starling-cleanup.bat");
+            std::fs::write(
+                &script,
+                format!(
+                    "@echo off\r\n\
+                     timeout /t 1 /nobreak >nul\r\n\
+                     del /F \"{}\"\r\n\
+                     del \"%~f0\"\r\n",
+                    old.display()
+                ),
+            )?;
+            std::process::Command::new("cmd")
+                .args(["/C", &script.to_string_lossy()])
+                .spawn()?;
+        }
         std::process::exit(0);
     }
 
@@ -266,15 +274,17 @@ fn main() -> anyhow::Result<()> {
                 println!("  ○ no roosts directory (none created yet)");
             }
             println!();
-            println!("System dependencies:");
-            if std::process::Command::new("cargo")
-                .arg("--version")
-                .output()
-                .is_ok()
-            {
-                println!("  ✓ cargo installed");
+            println!("Components:");
+            println!("  launcher: ✓ (this binary)");
+            if tui_missing() {
+                println!("  TUI: ✗ not installed — `starling install tui`");
             } else {
-                println!("  ✗ cargo not found — install Rust: https://rustup.rs");
+                println!("  TUI: ✓");
+            }
+            if server_missing() {
+                println!("  server: ✗ not installed — `starling install server`");
+            } else {
+                println!("  server: ✓");
             }
 
             // Per‑roost health checks
@@ -446,40 +456,71 @@ fn main() -> anyhow::Result<()> {
         }
     }
 }
+fn installed_bin_dir() -> std::path::PathBuf {
+    if cfg!(windows) {
+        std::env::var("LOCALAPPDATA")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_default()
+            .join("Starling")
+            .join("bin")
+    } else {
+        std::env::var("XDG_BIN_HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| {
+                std::env::var("HOME")
+                    .map(|h| std::path::PathBuf::from(h).join(".local").join("bin"))
+                    .unwrap_or_default()
+            })
+    }
+}
 
-fn tui_missing() -> bool {
-    std::process::Command::new("starling-tui")
+fn bin_exists(name: &str) -> bool {
+    let ext = if cfg!(windows) { ".exe" } else { "" };
+    // Check PATH first (fast, covers cargo install)
+    if std::process::Command::new(name)
         .arg("--version")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .is_err()
+        .is_ok()
+    {
+        return true;
+    }
+    // Check install directory (covers install.ps1/sh without restart)
+    installed_bin_dir().join(format!("{name}{ext}")).exists()
+}
+
+fn tui_missing() -> bool {
+    !bin_exists("starling-tui")
 }
 
 fn server_missing() -> bool {
-    std::process::Command::new("starling-server")
-        .arg("--version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_err()
+    !bin_exists("starling-server")
 }
 
 fn exec(bin: &str, args: &[&str]) -> anyhow::Result<()> {
-    let status = std::process::Command::new(bin)
-        .args(args)
-        .status()
-        .map_err(|e| {
-            anyhow::anyhow!(
-                "{bin} not found — run `starling install {}` first: {e}",
-                if bin == "starling-tui" {
-                    "tui"
-                } else {
-                    "server"
-                }
-            )
-        })?;
-    std::process::exit(status.code().unwrap_or(1));
+    let status = std::process::Command::new(bin).args(args).status();
+    // If not found on PATH, try the install directory
+    let status = match status {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let ext = if cfg!(windows) { ".exe" } else { "" };
+            let full = installed_bin_dir().join(format!("{bin}{ext}"));
+            if full.exists() {
+                std::process::Command::new(full).args(args).status()
+            } else {
+                return Err(anyhow::anyhow!(
+                    "{bin} not found — run `starling install {}` first",
+                    if bin.contains("tui") { "tui" } else { "server" }
+                ));
+            }
+        }
+        other => other,
+    };
+    let status = status.map_err(|e| anyhow::anyhow!("failed to run {bin}: {e}"))?;
+    if !status.success() {
+        anyhow::bail!("{bin} exited with code {:?}", status.code());
+    }
+    Ok(())
 }
 
 fn config_dir() -> std::path::PathBuf {

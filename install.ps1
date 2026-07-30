@@ -14,7 +14,9 @@ $Binary = "starling"
 $Repo = "Starling"
 $InstallDir = "$env:LOCALAPPDATA\Starling\bin"
 
-$target = "x86_64-pc-windows-msvc"
+# Detect architecture
+$arch = if ([Environment]::Is64BitOperatingSystem) { "x86_64" } else { "i686" }
+$target = "${arch}-pc-windows-msvc"
 $ext = ".exe"
 
 if ($Uninstall) {
@@ -45,14 +47,23 @@ Invoke-WebRequest -Uri $url -OutFile $outPath
 
 $shaUrl = "$ForgejoBase/$Repo/releases/download/$Tag/$Binary-$target.sha256"
 try {
-    $expected = (Invoke-RestMethod $shaUrl).Split(" ")[0].Trim()
-    $actual = (Get-FileHash $outPath -Algorithm SHA256).Hash.ToLower()
-    if ($expected -ne $actual) {
-        Remove-Item $outPath -Force
-        throw "Checksum mismatch! Expected $expected, got $actual"
+    $shaResp = Invoke-WebRequest -Uri $shaUrl -ErrorAction Stop
+    if ($shaResp.StatusCode -eq 200) {
+        $expected = $shaResp.Content.Split(" ")[0].Trim()
+        $actual = (Get-FileHash $outPath -Algorithm SHA256).Hash.ToLower()
+        if ($expected -ne $actual) {
+            Remove-Item $outPath -Force
+            throw "Checksum mismatch! Expected $expected, got $actual"
+        }
+        Write-Host "Checksum verified" -ForegroundColor Green
     }
-    Write-Host "Checksum verified" -ForegroundColor Green
-} catch { Write-Host "Skipping checksum verification" -ForegroundColor Yellow }
+} catch [System.Net.WebException] {
+    if ($_.Exception.Response.StatusCode -eq 404) {
+        Write-Host "No checksum file for this platform — skipping verification" -ForegroundColor Yellow
+    } else {
+        throw
+    }
+}
 
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$InstallDir*") {
