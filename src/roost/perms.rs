@@ -122,7 +122,10 @@ impl PermState {
             self.effective(from).contains(Perm::MANAGE_ROLES),
             "not allowed"
         );
-        anyhow::ensure!(self.outranks(from, target), "can't modify equal/higher rank");
+        anyhow::ensure!(
+            self.outranks(from, target),
+            "can't modify equal/higher rank"
+        );
         if let Some(idx) = role_index {
             anyhow::ensure!(idx < self.roles.len(), "role index out of range");
             self.members.entry(*target).or_default().push(idx);

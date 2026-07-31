@@ -37,7 +37,10 @@ pub enum ModRequest {
     Ban(EndpointId),
     Kick(EndpointId),
     Invite(EndpointId),
-    DeleteMessage { channel: String, id: String },
+    DeleteMessage {
+        channel: String,
+        id: String,
+    },
     AddChannel(String),
     RemoveChannel(String),
     SetRole {
