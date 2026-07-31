@@ -126,9 +126,8 @@ fn get_latest_tag(repo: &str) -> anyhow::Result<String> {
 fn download_self() -> anyhow::Result<()> {
     download_binary(REPO_STARLING, "starling")?;
 
-    // On Windows, download_binary already put the new binary in place and
-    // renamed the old one to .old. We just need to clean up the .old file
-    // after this process exits (can't delete while running).
+    // On Windows, download_binary already put the new binary in place.
+    // Schedule cleanup of the .old backup after we exit.
     if cfg!(windows) {
         let old = cargo_bin_dir().join("starling.old");
         if old.exists() {
@@ -137,7 +136,7 @@ fn download_self() -> anyhow::Result<()> {
                 &script,
                 format!(
                     "@echo off\r\n\
-                     timeout /t 1 /nobreak >nul\r\n\
+                     timeout /t 2 /nobreak >nul\r\n\
                      del /F \"{}\"\r\n\
                      del \"%~f0\"\r\n",
                     old.display()
@@ -147,7 +146,6 @@ fn download_self() -> anyhow::Result<()> {
                 .args(["/C", &script.to_string_lossy()])
                 .spawn()?;
         }
-        std::process::exit(0);
     }
 
     Ok(())

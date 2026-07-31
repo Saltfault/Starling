@@ -15,7 +15,7 @@ use argon2::Argon2;
 
 const EPOCH_KEY_INFO: &[u8] = b"starling/v1/epoch-key";
 
-/// A V1 content-encryption key. Its bytes are erased when dropped.
+/// A content-encryption key. Its bytes are erased when dropped.
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct EpochKey([u8; 32]);
 
@@ -62,19 +62,19 @@ impl EpochKey {
     }
 }
 
-/// Legacy V0 room-code crypto. Its wire format and behavior are preserved.
+/// Legacy room-code crypto. Its wire format and behavior are preserved.
 pub struct FlockCrypto {
     cipher: ChaCha20Poly1305,
 }
 
 impl FlockCrypto {
-    /// Legacy V0 room-code derivation. **Deprecated** — this uses a single
+    /// Legacy room-code derivation. **Deprecated** — this uses a single
     /// SHA-256 hash with no salt, no KDF iterations, and no memory hardness.
     /// Anyone who learns the room code (which is displayed in the UI and
     /// shared as an invite) can derive the cipher key and decrypt all past
     /// and future gossip. New flocks MUST use [`from_secret`] instead.
     ///
-    /// This path is preserved only to read legacy V0 traffic during the
+    /// This path is preserved only to read legacy traffic during the
     /// deprecation window. It will be removed in a future release.
     #[deprecated(
         since = "0.3.18",
@@ -94,7 +94,7 @@ impl FlockCrypto {
     /// and the memory hardness raises the cost of brute-force attacks.
     ///
     /// Prefer [`from_secret`] for new flocks; use this only when a
-    /// code-derived key is unavoidable (e.g. bridging a legacy V0 flock).
+    /// code-derived key is unavoidable (e.g. bridging a legacy flock).
     pub fn from_room_code_v2(code: &str, salt: &[u8; 16]) -> anyhow::Result<Self> {
         let mut key = [0u8; 32];
         Argon2::default()

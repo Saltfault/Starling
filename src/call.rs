@@ -1,4 +1,4 @@
-//! Signed, space-scoped call setup and teardown signals (Phase 7).
+//! Signed, space-scoped call setup and teardown signals.
 //!
 //! [`CallSignalV1`] carries the authenticated intent to create, join, leave,
 //! or end a voice/video call within a Starling space. Each signal binds the

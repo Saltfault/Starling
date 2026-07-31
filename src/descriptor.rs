@@ -207,7 +207,7 @@ impl DescriptorState {
     }
 }
 
-/// Derives the initial V1 topic. Later descriptors may explicitly rotate it.
+/// Derives the initial topic. Later descriptors may explicitly rotate it.
 pub fn derive_topic_id_v1(flock: &FlockId) -> TopicId {
     let mut hasher = Sha256::new();
     hasher.update(TOPIC_DOMAIN);

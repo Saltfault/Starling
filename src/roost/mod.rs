@@ -55,7 +55,7 @@ pub enum ModRequest {
 /// one, so they can neither read channels nor derive their keys.
 ///
 /// `control_secret` carries the key for the roost's control channel (where
-/// `RoostState` updates are broadcast). Phase 9 added this so the control
+/// `RoostState` updates are broadcast). The control
 /// channel is encrypted with a high-entropy secret rather than a
 /// public-derivable room code — closing the last gap where a non-member
 /// who merely knows the roost code could read the member/ban list.
@@ -316,7 +316,7 @@ mod tests {
 
     #[test]
     fn welcome_round_trips_control_secret_and_is_back_compatible() {
-        // A Phase 9 welcome carries a control_secret.
+        // A welcome carries a control_secret.
         let welcome = RoostWelcome {
             name: "Nest".into(),
             channels: vec![("general".into(), [1; 32])],

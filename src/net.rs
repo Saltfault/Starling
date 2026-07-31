@@ -156,7 +156,7 @@ pub fn decode_node_id(code: &str) -> Option<EndpointId> {
     EndpointId::from_bytes(&arr).ok()
 }
 
-/// Sign-then-encrypt a [`GossipPayload`] for the V0 gossip layer. The bytes
+/// Sign-then-encrypt a [`GossipPayload`] for the gossip layer. The bytes
 /// that actually leave the endpoint are `postcard(Signed)` inside a
 /// `ChaCha20Poly1305` flock envelope, so receivers can authenticate the
 /// sender with `Endpoints::author_verify(&payload, &sig)` before binding any
@@ -175,7 +175,7 @@ pub async fn broadcast_payload(
     Ok(())
 }
 
-/// Decrypted result of a Phase 9 gossip frame: the verified endpoint and the
+/// Decrypted result of a gossip frame: the verified endpoint and the
 /// `postcard(GossipPayload)` bytes that were carried inside the [`Signed`]
 /// envelope. Receivers should match on the inner payload and bind any
 /// embedded `id` claim to [`Self::author`] rather than trusting the claim.
@@ -185,9 +185,9 @@ pub struct VerifiedEnvelope {
     pub payload: GossipPayload,
 }
 
-/// Decrypt, parse, and verify a Phase 9 gossip frame in one step. Returns
+/// Decrypt, parse, and verify a gossip frame in one step. Returns
 /// `Ok(Some(verdict))` when the envelope is well-formed and signed by the
-/// claimed author; `Ok(None)` when the bytes decrypt but are not a Phase 9
+/// claimed author; `Ok(None)` when the bytes decrypt but are not a
 /// envelope (called sites can fall back to a legacy unsigned `GossipPayload`
 /// for back-compat); `Err` only when the flock cipher fails to authenticate —
 /// a sign of tampering or of a peer advertising the wrong topic.

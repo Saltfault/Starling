@@ -180,7 +180,8 @@ impl MembershipState {
     }
 
     /// Build a membership state directly from a flat list of members without a
-    /// V1 mutation chain. Used by roost runtimes that manage membership through
+    /// Build a membership state directly from a flat list of members without a
+    /// mutation chain. Used by roost runtimes that manage membership through
     /// their own authority model (e.g. [`crate::roost::perms::PermState`]) rather
     /// than signed [`SignedMembershipMutationV1`] entries.
     pub fn from_flat(

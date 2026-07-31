@@ -9,7 +9,7 @@ pub struct ChatMessage {
     pub ts: i64,
 }
 
-/// Signed wrapper. What actually gets encrypted and broadcast on the V0
+/// Signed wrapper. What actually gets encrypted and broadcast on the
 /// gossip layer is `postcard(Signed)`, not `postcard(GossipPayload)` —
 /// receivers verify the signature before trusting the inner payload, so a
 /// bird can no longer claim another bird's [`EndpointId`] or display name.
