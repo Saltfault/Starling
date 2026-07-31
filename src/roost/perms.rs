@@ -112,6 +112,41 @@ impl PermState {
         self.is_member(who) && !self.bans.contains(who)
     }
 
+    pub fn handle_set_role(
+        &mut self,
+        from: &EndpointId,
+        target: &EndpointId,
+        role_index: Option<usize>,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.effective(from).contains(Perm::MANAGE_ROLES),
+            "not allowed"
+        );
+        anyhow::ensure!(self.outranks(from, target), "can't modify equal/higher rank");
+        if let Some(idx) = role_index {
+            anyhow::ensure!(idx < self.roles.len(), "role index out of range");
+            self.members.entry(*target).or_default().push(idx);
+        } else {
+            self.members.remove(target);
+            self.members.insert(*target, vec![]);
+        }
+        Ok(())
+    }
+
+    pub fn handle_transfer_ownership(
+        &mut self,
+        from: &EndpointId,
+        target: &EndpointId,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.owner.as_ref() == Some(from),
+            "only the owner can transfer ownership"
+        );
+        anyhow::ensure!(self.is_member(target), "target must be a member");
+        self.owner = Some(*target);
+        Ok(())
+    }
+
     /// The enforcement pattern — every privileged action looks like this.
     /// Checks that `from` holds `BAN` and outranks `target`, then records the
     /// ban, removes the target from members, and bumps `key_epoch` so the

@@ -40,6 +40,11 @@ pub enum ModRequest {
     DeleteMessage { channel: String, id: String },
     AddChannel(String),
     RemoveChannel(String),
+    SetRole {
+        target: EndpointId,
+        role_index: Option<usize>,
+    },
+    TransferOwnership(EndpointId),
 }
 
 /// The roost's answer to a successful join handshake: its name and, per
