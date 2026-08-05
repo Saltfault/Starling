@@ -1,3 +1,8 @@
+pub mod history_proto;
+pub mod history_store;
+pub mod server;
+pub mod store;
+
 use std::collections::BTreeSet;
 
 use iroh::{EndpointId, Signature};
