@@ -1,12 +1,17 @@
 //! Short-lived, signed, space-scoped presence leases.
 
+use chrono::Utc;
 use std::collections::HashMap;
 use std::time::Duration;
 
 use anyhow::ensure;
 use iroh::EndpointId;
+use iroh_gossip::api::GossipSender;
 use serde::{Deserialize, Serialize};
+use tokio_util::sync::CancellationToken;
 
+use crate::crypto::FlockCrypto;
+use crate::event::GossipPayload;
 use crate::membership::{MembershipScopeId, MembershipState};
 use crate::protocol::SpaceId;
 
@@ -178,6 +183,48 @@ fn membership_scope(space: SpaceId) -> MembershipScopeId {
     }
 }
 
+/// Publishes signed presence leases immediately, then every 20 seconds.
+/// Returns when `cancel` is triggered or `changes` sender drops.
+pub async fn publish_presence(
+    sender: GossipSender,
+    crypto: FlockCrypto,
+    space: SpaceId,
+    secret: iroh::SecretKey,
+    mut changes: tokio::sync::mpsc::UnboundedReceiver<()>,
+    cancel: CancellationToken,
+) -> anyhow::Result<()> {
+    let mut sequence = 0_u64;
+    let mut interval = tokio::time::interval(Duration::from_secs(20));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        tokio::select! {
+            () = cancel.cancelled() => return Ok(()),
+            _ = interval.tick() => {},
+            change = changes.recv() => {
+                if change.is_none() {
+                    return Ok(());
+                }
+            }
+        }
+        let issued = chrono::Utc::now().timestamp_millis();
+        let lease = PresenceLeaseBodyV1 {
+            space,
+            endpoint: secret.public(),
+            sequence,
+            issued_unix_ms: issued,
+            expiry_unix_ms: issued.saturating_add(60_000),
+        }
+        .sign(&secret)?;
+        let payload = GossipPayload::Presence(lease);
+        let plaintext = postcard::to_stdvec(&payload)?;
+        sender
+            .broadcast(crypto.try_encrypt(&plaintext)?.into())
+            .await?;
+        sequence = sequence
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("presence sequence overflow"))?;
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,6 +1,6 @@
 [package]
 name = "starling"
-version = "0.5.7"
+version = "0.6.0"
 edition = "2024"
 license = "Apache-2.0"
 description = "Starling — federated p2p communications platform"
@@ -34,5 +34,6 @@ uuid = { version = "1.24.0", features = ["v4", "serde"] }
 crypto_box = { version = "0.9.1", features = ["chacha20"] }
 ureq = { version = "2", features = ["json"] }
 serde_json = "1"
+tokio-util = "0.7.19"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
