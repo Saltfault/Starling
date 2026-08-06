@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn perms_round_trip_through_sled() {
-        use starling::roost::perms::{Perm, PermState, Role};
+        use crate::roost::perms::{Perm, PermState, Role};
         let store = temporary_store();
         let owner = iroh::SecretKey::from_bytes(&[1; 32]).public();
         let member = iroh::SecretKey::from_bytes(&[2; 32]).public();

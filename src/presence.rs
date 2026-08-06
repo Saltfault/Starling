@@ -1,6 +1,5 @@
 //! Short-lived, signed, space-scoped presence leases.
 
-use chrono::Utc;
 use std::collections::HashMap;
 use std::time::Duration;
 
