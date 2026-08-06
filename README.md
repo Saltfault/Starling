@@ -28,13 +28,14 @@ Then use it to install the components you want:
 
 ```bash
 starling install tui        # terminal client (chat, voice, video)
-starling install server     # roost server (host a community)
 ```
 
-The launcher downloads prebuilt binaries — no compilation. Each component can also be installed directly from its own repo if you prefer.
+**Roosts are built into the launcher** — no separate install needed. Create one with `starling roost create <name>` and it runs in the background. See [Roosts](#roosts) below.
 
-Run `starling-tui` to launch the client, `starling-server --help` for server commands.
-Upgrade everything: `starling update`. Uninstall a component: `starling tui uninstall`.
+The launcher downloads prebuilt binaries — no compilation.
+
+Run `starling-tui` to launch the client.
+Upgrade everything: `starling update`. Uninstall: `starling tui uninstall`.
 
 > **Building from source?** You need Rust and a C compiler. See the per-platform setup in [Starling-TUI](https://forgejo.hearthhome.lol/Saltfault/Starling-TUI#platform-setup).
 
@@ -43,31 +44,22 @@ Upgrade everything: `starling update`. Uninstall a component: `starling tui unin
 | I want to… | Go here |
 |------------|---------|
 | **Use Starling right now** (chat, voice, video) | Install above, then see **[Starling-TUI](https://forgejo.hearthhome.lol/Saltfault/Starling-TUI)** for usage |
-| **Run my own community server** | Install above, then see **[Starling-Server](https://forgejo.hearthhome.lol/Saltfault/Starling-Server)** for roost docs |
-| **Build a client on the protocol** | [Starling-Server](https://forgejo.hearthhome.lol/Saltfault/Starling-Server) (it's also the shared library) |
+| **Run my own community server** | `starling roost create <name>` — roosts are built-in, no separate server needed |
+| **Build a client on the protocol** | [Starling](https://forgejo.hearthhome.lol/Saltfault/Starling) (this repo) is the shared library |
 | Follow the future GUI / mobile / web apps | [Desktop](https://forgejo.hearthhome.lol/Saltfault/Starling-Desktop) · [Android](https://forgejo.hearthhome.lol/Saltfault/Starling-Android) · [Web](https://forgejo.hearthhome.lol/Saltfault/Starling-Web) (all planned) |
 
 ---
 
 ## The repositories
 
-Starling is split into six repos: this hub, one shared core, and four clients.
-
 | Repo | What it is | Status |
 |------|------------|--------|
-| **[Starling](https://forgejo.hearthhome.lol/Saltfault/Starling)** (this) | Project hub — docs, protocol overview, roadmap | — |
-| **[Starling-Server](https://forgejo.hearthhome.lol/Saltfault/Starling-Server)** | Shared protocol library **and** the headless roost server | 🚧 Active |
+| **[Starling](https://forgejo.hearthhome.lol/Saltfault/Starling)** (this) | Project hub + shared library — protocol, crypto, networking, roost server | 🚧 Active |
 | **[Starling-TUI](https://forgejo.hearthhome.lol/Saltfault/Starling-TUI)** | Terminal client | 🚧 Active — text, voice, video |
+| **[Starling-Server](https://forgejo.hearthhome.lol/Saltfault/Starling-Server)** | ⚠️ **Deprecated** — roost server moved to core (v0.6.0+). This crate is backward-compat only. | 📦 Deprecated |
 | **[Starling-Desktop](https://forgejo.hearthhome.lol/Saltfault/Starling-Desktop)** | Native GUI client | 📋 Planned |
 | **[Starling-Android](https://forgejo.hearthhome.lol/Saltfault/Starling-Android)** | Android client | 📋 Planned |
 | **[Starling-Web](https://forgejo.hearthhome.lol/Saltfault/Starling-Web)** | Browser (WASM) client | 📋 Planned |
-
-Only the **TUI** and **Server** are in active development. The three GUI clients are placeholders that will build on the Server library.
-
-GitHub mirrors are available under [github.com/Saltfault](https://github.com/Saltfault).
-
----
-
 ## The vocabulary
 
 Starling uses a handful of bird terms, and only where they carry weight. Everything else keeps its ordinary networking name.
