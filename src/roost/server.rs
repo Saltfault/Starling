@@ -127,7 +127,7 @@ fn create_contents(name: &str, dir: &std::path::Path) -> anyhow::Result<()> {
     println!("  invite code: {code}");
     println!("  data: {}", dir.display());
     println!();
-    println!("Start it with: starling-server roost open {name}");
+    println!("Start it with: starling roost open {name}");
     crate::logger::info(&format!(
         "roost '{name}' created, invite fingerprint {}",
         crate::logger::fingerprint(code.as_bytes())
@@ -186,7 +186,7 @@ pub async fn open(
     let dir = roost_data_dir(name);
     if !dir.exists() {
         anyhow::bail!(
-            "roost '{name}' not found at {}. Create it first with: starling-server roost create {name}",
+            "roost '{name}' not found at {}. Create it first with: starling roost create {name}",
             dir.display()
         );
     }
