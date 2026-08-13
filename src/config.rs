@@ -3,13 +3,13 @@ use serde::{Deserialize, Serialize};
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 
-pub const DEFAULT_TEXT_COLOR: &str = "#CFD6D2";
-pub const DEFAULT_BG_COLOR: &str = "";
-pub const DEFAULT_BORDER_COLOR: &str = "#333B37";
+pub const DEFAULT_TEXT_COLOR: &str = "#DBDEE1";
+pub const DEFAULT_BG_COLOR: &str = "#313338";
+pub const DEFAULT_BORDER_COLOR: &str = "#3F4147";
 pub const DEFAULT_ACCENT_COLOR: &str = "#5865F2";
-pub const DEFAULT_AUTHOR_COLOR: &str = "#F48A52";
-pub const DEFAULT_SELECTION_COLOR: &str = "#E0D267";
-pub const DEFAULT_DIM_COLOR: &str = "#5F6862";
+pub const DEFAULT_AUTHOR_COLOR: &str = "#F0B232";
+pub const DEFAULT_SELECTION_COLOR: &str = "#F2F3F5";
+pub const DEFAULT_DIM_COLOR: &str = "#949BA4";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Profile {
