@@ -25,6 +25,16 @@ pub struct Profile {
     pub author_color: String,
     pub selection_color: String,
     pub dim_color: String,
+    #[serde(default)]
+    pub banner: String,
+    #[serde(default)]
+    pub avatar_label: String,
+    #[serde(default)]
+    pub about_me: String,
+    #[serde(default)]
+    pub motd: String,
+    #[serde(default)]
+    pub custom_status: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -68,6 +78,11 @@ impl Default for Profile {
             author_color: DEFAULT_AUTHOR_COLOR.into(),
             selection_color: DEFAULT_SELECTION_COLOR.into(),
             dim_color: DEFAULT_DIM_COLOR.into(),
+            banner: String::new(),
+            avatar_label: "STARLING".into(),
+            about_me: String::new(),
+            motd: String::new(),
+            custom_status: String::new(),
         }
     }
 }
