@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 pub const DEFAULT_TEXT_COLOR: &str = "#CFD6D2";
 pub const DEFAULT_BG_COLOR: &str = "";
 pub const DEFAULT_BORDER_COLOR: &str = "#333B37";
-pub const DEFAULT_ACCENT_COLOR: &str = "#6FAE9D";
+pub const DEFAULT_ACCENT_COLOR: &str = "#5865F2";
 pub const DEFAULT_AUTHOR_COLOR: &str = "#F48A52";
 pub const DEFAULT_SELECTION_COLOR: &str = "#E0D267";
 pub const DEFAULT_DIM_COLOR: &str = "#5F6862";
