@@ -119,9 +119,7 @@ impl Store {
 
     /// Persist the roost display name so a rename survives a restart.
     pub fn save_name(&self, name: &str) -> anyhow::Result<()> {
-        let valid = !name.is_empty()
-            && name.len() <= 64
-            && name.chars().all(|c| !c.is_control());
+        let valid = !name.is_empty() && name.len() <= 64 && name.chars().all(|c| !c.is_control());
         anyhow::ensure!(valid, "invalid roost name");
         self.db.insert([NAME_KEY], name.as_bytes())?;
         self.db.flush()?;
