@@ -11,6 +11,7 @@ const CHANNEL_SECRET_PREFIX: u8 = 2;
 const PERMS_KEY: u8 = 3;
 const CONTROL_SECRET_KEY: u8 = 4;
 const CHANNELS_KEY: u8 = 5;
+const NAME_KEY: u8 = 6;
 
 /// A sled-backed message store.
 #[derive(Debug)]
@@ -102,6 +103,27 @@ impl Store {
     pub fn save_channels(&self, channels: &[String]) -> anyhow::Result<()> {
         self.db
             .insert([CHANNELS_KEY], postcard::to_stdvec(channels)?)?;
+        self.db.flush()?;
+        Ok(())
+    }
+
+    /// Load the persisted roost name, if any. `None` for a fresh roost that
+    /// was created before names were persisted (falls back to the filesystem
+    /// name on open).
+    pub fn load_name(&self) -> anyhow::Result<Option<String>> {
+        let Some(bytes) = self.db.get([NAME_KEY])? else {
+            return Ok(None);
+        };
+        Ok(Some(String::from_utf8(bytes.as_ref().to_vec())?))
+    }
+
+    /// Persist the roost display name so a rename survives a restart.
+    pub fn save_name(&self, name: &str) -> anyhow::Result<()> {
+        let valid = !name.is_empty()
+            && name.len() <= 64
+            && name.chars().all(|c| !c.is_control());
+        anyhow::ensure!(valid, "invalid roost name");
+        self.db.insert([NAME_KEY], name.as_bytes())?;
         self.db.flush()?;
         Ok(())
     }

@@ -225,8 +225,9 @@ pub async fn open(
     let channels = store
         .load_channels()?
         .unwrap_or_else(|| vec!["general".to_string()]);
+    let persisted_name = store.load_name()?.unwrap_or_else(|| name.to_string());
     let state = RoostState {
-        name: name.to_string(),
+        name: persisted_name,
         channels,
         perms: persisted_perms.unwrap_or_default(),
     };
@@ -981,6 +982,42 @@ pub fn destroy(name: &str, force: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Destroy the roost whose identity matches `code` (typed roost code).
+/// Returns `Ok(false)` when no local roost matches the code — it is a
+/// remote roost and only the owner can destroy it.
+pub fn destroy_by_code(code: &str) -> anyhow::Result<bool> {
+    use crate::net::decode_typed_code;
+    let Some(typed) = decode_typed_code(code) else {
+        return Ok(false);
+    };
+    let Some(node_id) = crate::net::typed_code_node_id(&typed) else {
+        return Ok(false);
+    };
+    let roosts_dir = Profile::roosts_dir();
+    for entry in std::fs::read_dir(&roosts_dir)? {
+        let Ok(entry) = entry else { continue };
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if validate_roost_name(&name).is_err() {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(roost_key_path(&name)) else {
+            continue;
+        };
+        let Ok(key_bytes) = <[u8; 32]>::try_from(bytes.as_slice()) else {
+            continue;
+        };
+        let key = iroh::SecretKey::from_bytes(&key_bytes);
+        if key.public() == node_id {
+            destroy(&name, true)?;
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 pub fn invite(name: &str) -> anyhow::Result<()> {
     validate_roost_name(name)?;
     let dir = roost_data_dir(name);
@@ -1497,6 +1534,9 @@ impl iroh::protocol::ProtocolHandler for ModProto {
             if let Err(e) = self.store.save_channels(&snapshot.channels) {
                 crate::logger::warn(&format!("roost: failed to persist channels: {e}"));
             }
+            if let Err(e) = self.store.save_name(&snapshot.name) {
+                crate::logger::warn(&format!("roost: failed to persist name: {e}"));
+            }
             let _ = self.state_tx.send(snapshot).await;
         }
 
@@ -1532,6 +1572,7 @@ fn compute_verdict(
         ModRequest::DeleteMessage { channel, id } => delete_verdict(st, from, store, &channel, &id),
         ModRequest::AddChannel(name) => add_channel_verdict(st, from, &name),
         ModRequest::RemoveChannel(name) => remove_channel_verdict(st, from, &name),
+        ModRequest::Rename(name) => rename_verdict(st, from, &name),
         ModRequest::SetRole { target, role_index } => {
             once(st.perms.handle_set_role(from, &target, role_index))
         }
@@ -1607,6 +1648,23 @@ fn remove_channel_verdict(
     } else {
         (Err("channel not found".into()), false)
     }
+}
+
+fn rename_verdict(
+    st: &mut RoostState,
+    from: &iroh::EndpointId,
+    name: &str,
+) -> (Result<(), String>, bool) {
+    let perms = st.perms.effective(from);
+    let is_owner = st.perms.owner.as_ref() == Some(from);
+    if !is_owner && !perms.contains(Perm::ADMIN) {
+        return (Err("not allowed".into()), false);
+    }
+    if let Err(e) = validate_roost_name(name) {
+        return (Err(e.to_string()), false);
+    }
+    st.name = name.to_string();
+    (Ok(()), true)
 }
 
 /// ALPN for the join handshake: the only way to receive channel secrets. The

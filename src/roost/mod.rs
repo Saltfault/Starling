@@ -48,6 +48,7 @@ pub enum ModRequest {
     },
     AddChannel(String),
     RemoveChannel(String),
+    Rename(String),
     SetRole {
         target: EndpointId,
         role_index: Option<usize>,
