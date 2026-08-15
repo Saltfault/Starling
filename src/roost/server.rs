@@ -976,6 +976,24 @@ fn send_shutdown_signal(pid: u32) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Read a roost's persisted state (name, channels, perms) without starting
+/// the server. Used by the TUI to display a locally hosted roost immediately
+/// after creation, without a network join handshake.
+pub fn read_state(name: &str) -> anyhow::Result<(String, Vec<String>, super::perms::PermState)> {
+    validate_roost_name(name)?;
+    let dir = roost_data_dir(name);
+    if !dir.exists() {
+        anyhow::bail!("roost '{name}' not found at {}", dir.display());
+    }
+    let store = Store::open(roost_db_path(name))?;
+    let display_name = store.load_name()?.unwrap_or_else(|| name.to_string());
+    let channels = store
+        .load_channels()?
+        .unwrap_or_else(|| vec!["general".to_string()]);
+    let perms = store.load_perms()?.unwrap_or_default();
+    Ok((display_name, channels, perms))
+}
+
 pub fn destroy(name: &str, force: bool) -> anyhow::Result<()> {
     validate_roost_name(name)?;
     let dir = roost_data_dir(name);
