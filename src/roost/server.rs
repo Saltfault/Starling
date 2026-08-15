@@ -86,6 +86,11 @@ fn load_invite_code(name: &str) -> anyhow::Result<String> {
     Ok(encode_roost_code(&node_id))
 }
 
+/// Public invite code for a roost, without starting the server.
+pub fn invite_code(name: &str) -> anyhow::Result<String> {
+    load_invite_code(name)
+}
+
 pub fn create(name: &str) -> anyhow::Result<()> {
     let code = create_quiet(name)?;
     println!("' roost '{name}' created");
