@@ -91,6 +91,36 @@ pub fn invite_code(name: &str) -> anyhow::Result<String> {
     load_invite_code(name)
 }
 
+/// Whether a roost with this invite code exists on disk (i.e. it is hosted
+/// locally). Used by the TUI to start the local server before rejoining.
+pub fn roost_exists_by_code(code: &str) -> bool {
+    roost_name_by_code(code).is_some()
+}
+
+/// The on-disk name of a locally hosted roost matching `code`, if any.
+pub fn roost_name_by_code(code: &str) -> Option<String> {
+    use crate::net::decode_typed_code;
+    let typed = decode_typed_code(code)?;
+    let node_id = crate::net::typed_code_node_id(&typed)?;
+    let roosts_dir = std::fs::read_dir(Profile::roosts_dir()).ok()?;
+    for entry in roosts_dir.flatten() {
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if validate_roost_name(&name).is_err() {
+            continue;
+        }
+        let bytes = std::fs::read(roost_key_path(&name)).ok()?;
+        let key_bytes = <[u8; 32]>::try_from(bytes.as_slice()).ok()?;
+        let key = iroh::SecretKey::from_bytes(&key_bytes);
+        if key.public() == node_id {
+            return Some(name);
+        }
+    }
+    None
+}
+
 pub fn create(name: &str) -> anyhow::Result<()> {
     let code = create_quiet(name)?;
     println!("' roost '{name}' created");
