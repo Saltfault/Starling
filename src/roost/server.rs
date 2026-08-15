@@ -87,6 +87,18 @@ fn load_invite_code(name: &str) -> anyhow::Result<String> {
 }
 
 pub fn create(name: &str) -> anyhow::Result<()> {
+    let code = create_quiet(name)?;
+    println!("' roost '{name}' created");
+    println!("  invite code: {code}");
+    println!("  data: {}", roost_data_dir(name).display());
+    println!();
+    println!("The roost will start automatically when you join it from the TUI.");
+    Ok(())
+}
+
+/// Create a roost without printing to stdout, returning its invite code.
+/// Used by the TUI so server output never corrupts the terminal.
+pub fn create_quiet(name: &str) -> anyhow::Result<String> {
     validate_roost_name(name)?;
     let dir = roost_data_dir(name);
     if dir.exists() {
@@ -104,10 +116,11 @@ pub fn create(name: &str) -> anyhow::Result<()> {
         }
         crate::logger::warn(&format!("roost create '{name}' failed: {err}"));
     }
-    result
+    let code = load_invite_code(name)?;
+    result.map(|_| code)
 }
 
-fn create_contents(name: &str, dir: &std::path::Path) -> anyhow::Result<()> {
+fn create_contents(name: &str, _dir: &std::path::Path) -> anyhow::Result<()> {
     let db = sled::open(roost_db_path(name))?;
     for tree in ["events", "space_index", "session_heads", "heads", "schema"] {
         db.open_tree(tree)?;
@@ -123,11 +136,6 @@ fn create_contents(name: &str, dir: &std::path::Path) -> anyhow::Result<()> {
 
     let node_id: iroh::EndpointId = key.public();
     let code = encode_roost_code(&node_id);
-    println!("' roost '{name}' created");
-    println!("  invite code: {code}");
-    println!("  data: {}", dir.display());
-    println!();
-    println!("The roost will start automatically when you join it from the TUI.");
     crate::logger::info(&format!(
         "roost '{name}' created, invite fingerprint {}",
         crate::logger::fingerprint(code.as_bytes())
@@ -321,20 +329,22 @@ pub async fn open(
     // DIAGNOSTIC: confirm which ALPNs the endpoint is advertising. If a join
     // still fails with QUIC error 120, this lets us verify the server side
     // rather than guessing.
-    println!(
-        "roost '{name}' router active on {my_id}; registered ALPNs: {}",
-        [
-            GOSSIP_ALPN,
-            HISTORY_V1_ALPN,
-            ROOST_SYNC_ALPN,
-            MOD_ALPN,
-            JOIN_ALPN
-        ]
-        .iter()
-        .map(|a| String::from_utf8_lossy(a).to_string())
-        .collect::<Vec<_>>()
-        .join(", ")
-    );
+    if !silent {
+        println!(
+            "roost '{name}' router active on {my_id}; registered ALPNs: {}",
+            [
+                GOSSIP_ALPN,
+                HISTORY_V1_ALPN,
+                ROOST_SYNC_ALPN,
+                MOD_ALPN,
+                JOIN_ALPN
+            ]
+            .iter()
+            .map(|a| String::from_utf8_lossy(a).to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+        );
+    }
 
     let roost_id = RoostId(*my_id.as_bytes());
     {
@@ -348,9 +358,11 @@ pub async fn open(
         }
     }
     let code = encode_roost_code(&my_id);
-    println!("✓ roost '{name}' is online");
-    println!("  code: {code}");
-    println!("  join: starling join {code}");
+    if !silent {
+        println!("✓ roost '{name}' is online");
+        println!("  code: {code}");
+        println!("  join: starling join {code}");
+    }
     crate::logger::info(&format!(
         "roost '{name}' online, invite fingerprint {}",
         crate::logger::fingerprint(code.as_bytes())
